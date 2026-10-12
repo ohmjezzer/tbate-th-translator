@@ -98,16 +98,44 @@ scanlation/
 ├── pipeline.py           # ★ ScanlationPipeline — เชื่อมทุกสเตจ
 └── cli.py                # command-line interface
 
-pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 4 ขั้นตอน (รันได้จริง)
-scripts/download_weights.py
+pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 5 ขั้นตอน (รันได้จริง)
+scripts/download_weights.py   # ดาวน์โหลด checkpoint ของ SAM
+scripts/check_env.py          # ตรวจว่าติดตั้ง environment ครบไหม
 config/                   # characters.json / glossary.json / config.json
 fonts/                    # Sarabun-Regular.ttf / Sarabun-Bold.ttf
+.env.example              # ตัวอย่างค่าตั้งทุกตัว (คัดลอกเป็น .env)
+README.md / SETUP.md / ARCHITECTURE.md
 requirements.txt / requirements-ml.txt / environment.yml
 ```
 
 ---
 
 ## 3) การติดตั้ง (Conda / Virtual Environment)
+
+> 📖 **คู่มือติดตั้งแบบละเอียดทีละขั้น (Windows/macOS/Linux + GPU/CPU) อยู่ใน [`SETUP.md`](SETUP.md)**
+> และตรวจว่าติดตั้งครบไหมได้ด้วย `python scripts/check_env.py`
+
+### ⚙️ ตั้งค่าทุกอย่างผ่าน `.env` (แนะนำ)
+
+โปรเจกต์มี **`.env.example`** ที่รวมค่าตั้งได้ทุกตัว (paths / download / detection /
+inpainting / translation / typesetting) **รวม API key ของผู้ให้บริการ AI ทุกเจ้า**:
+
+```bash
+cp .env.example .env      # แล้วเปิดแก้ค่าที่ต้องการ
+```
+
+ค่าทุกตัวโหลดจาก `.env` อัตโนมัติ โดยมีลำดับความสำคัญ:
+`env ในเชลล์ > ไฟล์ .env > config/config.json > ค่าดีฟอลต์`
+
+ตัวอย่าง `.env` ขั้นต่ำ:
+```dotenv
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
+SCANLATION_TRANSLATION_BACKEND=anthropic
+SCANLATION_PROFILE=gpu            # ทางลัดตั้ง CPU/GPU ให้ทั้งระบบ
+```
+> รองรับผู้ให้บริการ: Anthropic, OpenAI, Azure, Gemini, DeepSeek, Groq, Mistral,
+> OpenRouter, Together, xAI, Perplexity, Cohere, Fireworks, Cerebras, Hugging Face, Replicate
+> — ตั้ง `SCANLATION_TRANSLATION_BACKEND` + key ให้ตรงคู่กัน
 
 ### ทางเลือก A: venv (แนะนำสำหรับเครื่องเดียว)
 
@@ -168,6 +196,7 @@ python -m scanlation.cli run 4 23 26    # เฉพาะบางหน้า
 python -m scanlation.cli detect 4       # ทดสอบเฉพาะ Detection + เซฟภาพ mask
 python -m scanlation.cli show-prompt    # ตรวจ system prompt ที่จะส่งให้ LLM
 python -m scanlation.cli init-config    # สร้าง config ตัวอย่าง
+python scripts/check_env.py             # ตรวจว่าติดตั้งครบไหม
 ```
 
 ผลลัพธ์: `out/page-XXXX.png` และไฟล์ intermediate ใน `.scanlation/`

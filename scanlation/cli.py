@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from .config import ScanlationConfig
+from .env import apply_env, load_dotenv
 from .pipeline import ScanlationPipeline
 from .translation import StoryContext, LLMTranslator
 from .translation.prompts import build_system_prompt
@@ -27,9 +28,16 @@ log = get_logger("scanlation.cli")
 
 
 def _load_config(path: str | None) -> ScanlationConfig:
+    """
+    สร้าง config โดยโหลด .env ก่อน แล้วให้ env ทับค่าจากไฟล์ config
+    (ลำดับความสำคัญ: env ในเชลล์ > .env > ไฟล์ config > ค่าดีฟอลต์)
+    """
+    load_dotenv()                       # อ่าน .env อัตโนมัติถ้ามี
     if path and Path(path).exists():
-        return ScanlationConfig.load(path)
-    return ScanlationConfig()
+        return ScanlationConfig.load(path)   # load() จะ apply env ให้แล้ว
+    if path:
+        log.warning("ไม่พบไฟล์ config: %s — ใช้ค่าดีฟอลต์ + env", path)
+    return apply_env(ScanlationConfig())
 
 
 def cmd_run(args) -> int:
