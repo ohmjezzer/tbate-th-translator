@@ -76,8 +76,53 @@ def main() -> int:
     args = ap.parse_args()
     opt = not args.strict
 
+    # ให้ import scanlation ได้เมื่อรันจาก root ของโปรเจกต์
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    # โหลด .env (ถ้ามี) ก่อนตรวจทุกอย่าง
+    try:
+        from scanlation.env import load_dotenv
+        load_dotenv(root / ".env")
+    except Exception:  # noqa: BLE001
+        pass
+
     print(f"{B}════ Scanlation Engine — ตรวจสภาพแวดล้อม ════{X}")
     print(f"python : {sys.version.split()[0]}  ({sys.executable})")
+
+    # ------------------------------------------------------- 0) .env / env vars
+    section("0) ไฟล์ .env และ environment variable")
+    from scanlation.env import env_report, KNOWN_AI_KEYS, ENV_MAP
+    repo_root = Path(__file__).resolve().parent.parent
+    env_file = repo_root / ".env"
+    example = repo_root / ".env.example"
+    if env_file.exists():
+        ok(f"พบไฟล์ .env ({env_file.name}) — ระบบจะโหลดอัตโนมัติ")
+    else:
+        hint = ".env.example มีให้แล้ว" if example.exists() else "สร้างจากตัวอย่าง"
+        warn("ยังไม่มีไฟล์ .env",
+             f"คัดลอกตัวอย่างแล้วแก้ค่า:  cp .env.example .env   ({hint})")
+    try:
+        import dotenv  # noqa: F401
+        ok("มีไลบรารี python-dotenv (โหลด .env ได้ครบ syntax)")
+    except ImportError:
+        warn("ไม่มี python-dotenv — จะใช้ตัว parse ในตัวแทน (ก็ใช้ได้)",
+             "pip install python-dotenv")
+
+    rep = env_report()
+    if rep["app_vars_set"]:
+        ok(f"มี SCANLATION_* ตั้งไว้ {len(rep['app_vars_set'])} ตัว: "
+           + ", ".join(rep["app_vars_set"][:6])
+           + (" …" if len(rep["app_vars_set"]) > 6 else ""))
+    else:
+        warn(f"ยังไม่ได้ตั้ง SCANLATION_* ใด ๆ (ใช้ค่าดีฟอลต์จาก config — มี {len(ENV_MAP)} ตัวที่ตั้งได้)",
+             "ดูรายการทั้งหมดใน .env.example")
+    if rep["ai_keys_set"]:
+        ok("พบ API key ที่ตั้งไว้: " + ", ".join(rep["ai_keys_set"]))
+    else:
+        warn("ยังไม่พบ API key ของผู้ให้บริการ AI ใด ๆ",
+             "ใส่ใน .env (ดูรายการครบใน .env.example) — "
+             f"รองรับ {len(KNOWN_AI_KEYS)} คีย์")
 
     # ---------------------------------------------------------------- 1) Python
     section("1) Python")

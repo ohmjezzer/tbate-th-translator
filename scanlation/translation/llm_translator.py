@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ..config import TranslationConfig
 from ..schemas import Bubble, Page
@@ -30,6 +31,32 @@ from .glossary import StoryContext, load_context
 from .prompts import OUTPUT_SCHEMA, build_system_prompt, build_user_prompt
 
 log = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# base_url ดีฟอลต์ของผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible
+# (ตั้ง translation.base_url เองเพื่อทับ หรือใช้ endpoint ที่นี่)
+# ---------------------------------------------------------------------------
+_PROVIDER_BASE_URLS: Dict[str, str] = {
+    "openai":     "https://api.openai.com/v1",
+    "deepseek":   "https://api.deepseek.com/v1",
+    "groq":       "https://api.groq.com/openai/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "together":   "https://api.together.xyz/v1",
+    "mistral":    "https://api.mistral.ai/v1",
+    "xai":        "https://api.x.ai/v1",
+    "grok":       "https://api.x.ai/v1",
+    "fireworks":  "https://api.fireworks.ai/inference/v1",
+    "cerebras":   "https://api.cerebras.ai/v1",
+    "perplexity": "https://api.perplexity.ai",
+    "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "google":     "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "ollama":     "http://localhost:11434/v1",
+}
+
+
+def _provider_base_url(backend: str) -> Optional[str]:
+    """คืน base_url ที่เหมาะกับ backend (None = ปล่อยให้ SDK ใช้ค่าดีฟอลต์)"""
+    return _PROVIDER_BASE_URLS.get((backend or "").strip().lower())
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +88,14 @@ class AnthropicBackend(LLMBackend):
                 import anthropic
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError("ต้องติดตั้ง SDK: pip install anthropic") from exc
-            self._client = anthropic.Anthropic()   # อ่าน ANTHROPIC_API_KEY อัตโนมัติ
+            # อ่าน ANTHROPIC_API_KEY อัตโนมัติ; รองรับ base_url ทางเลือก (proxy/self-host)
+            kwargs = {}
+            if self.cfg.base_url:
+                kwargs["base_url"] = self.cfg.base_url
+            key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+            if key:
+                kwargs["api_key"] = key
+            self._client = anthropic.Anthropic(**kwargs)
 
     def complete(self, system: str, user: str) -> Dict:
         tool = {
@@ -89,7 +123,10 @@ class AnthropicBackend(LLMBackend):
 class OpenAIBackend(LLMBackend):
     """
     Backend ของ GPT-4o / GPT-4.1 ใช้ Structured Outputs (json_schema, strict)
-    ต้องตั้ง env: OPENAI_API_KEY
+
+    รองรับผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible ด้วย (ผ่าน base_url):
+    DeepSeek / Groq / OpenRouter / Together / Mistral / xAI(Grok) / Ollama ฯลฯ
+    โดยกำหนด ``translation.base_url`` + ``translation.model`` ให้ตรง
     """
 
     def __init__(self, config: TranslationConfig, client=None):
@@ -101,7 +138,20 @@ class OpenAIBackend(LLMBackend):
                 from openai import OpenAI
             except ImportError as exc:  # pragma: no cover
                 raise RuntimeError("ต้องติดตั้ง SDK: pip install openai") from exc
-            self._client = OpenAI()   # อ่าน OPENAI_API_KEY อัตโนมัติ
+            self._client = self._make_client(OpenAI)
+
+    def _make_client(self, OpenAI):
+        """สร้าง client โดยดึง api_key/base_url ให้ตรงกับ backend ที่เลือก"""
+        from ..env import resolve_api_key
+
+        kwargs: Dict = {}
+        base_url = self.cfg.base_url or _provider_base_url(self.cfg.backend)
+        if base_url:
+            kwargs["base_url"] = base_url
+        key = resolve_api_key(self.cfg.backend)
+        if key:
+            kwargs["api_key"] = key
+        return OpenAI(**kwargs)
 
     def complete(self, system: str, user: str) -> Dict:
         resp = self._client.chat.completions.create(
@@ -160,11 +210,16 @@ class LLMTranslator(Translator):
 
     # ---- สร้าง backend ตาม config ---------------------------------------
     def _default_backend(self) -> LLMBackend:
-        if self.cfg.backend == "anthropic":
+        name = (self.cfg.backend or "").strip().lower()
+        if name == "anthropic":
             return AnthropicBackend(self.cfg)
-        if self.cfg.backend == "openai":
+        # ผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible (openai/deepseek/groq/...)
+        if name in _PROVIDER_BASE_URLS:
             return OpenAIBackend(self.cfg)
-        raise ValueError(f"ไม่รู้จัก backend '{self.cfg.backend}' (รองรับ anthropic/openai)")
+        raise ValueError(
+            f"ไม่รู้จัก backend '{self.cfg.backend}' "
+            f"(รองรับ: anthropic, {', '.join(sorted(_PROVIDER_BASE_URLS))})"
+        )
 
     # ---- cache -----------------------------------------------------------
     def _cache_path(self) -> Path:

@@ -44,7 +44,16 @@ from scanlation.config import (
     TypesettingConfig,
 )
 from scanlation.downloader import ChapterDownloader
+from scanlation.env import apply_env, load_dotenv
 from scanlation.pipeline import ScanlationPipeline
+
+
+def _build_config(config_path: str | None = None) -> ScanlationConfig:
+    """โหลด .env → ไฟล์ config → ให้ env ทับ (เหมือนที่ CLI ทำ)"""
+    load_dotenv()
+    if config_path and Path(config_path).exists():
+        return ScanlationConfig.load(config_path)
+    return apply_env(ScanlationConfig())
 
 
 # ===========================================================================
@@ -59,7 +68,7 @@ def run_download(chapter_url: str, limit: int, out_dir: str | None,
         3) ดาวน์โหลดแบบขนาน -> ImageConverter บังคับเป็น WebP -> page-XXXX.webp
     แล้ว (ถ้า translate=True) ส่งต่อให้ pipeline แปลทันที
     """
-    cfg = ScanlationConfig()
+    cfg = _build_config()
     cfg.download.limit = limit
     if out_dir:
         cfg.download.out_dir = out_dir
@@ -92,13 +101,14 @@ def run_download(chapter_url: str, limit: int, out_dir: str | None,
 # โหมดที่ 1: full pipeline — ใช้คอมโพเนนต์จริงทั้งหมด (SAM + LaMa + LLM)
 # ===========================================================================
 def run_full(config_path: str | None, pages: list[int] | None) -> None:
-    cfg = ScanlationConfig.load(config_path) if config_path else ScanlationConfig()
+    cfg = _build_config(config_path)
 
     # ตรวจว่ามี API key ของ LLM หรือยัง
     if not cfg.api_key():
         raise SystemExit(
-            "ไม่พบ API key: กรุณาตั้งค่า ANTHROPIC_API_KEY หรือ OPENAI_API_KEY "
-            "ให้ตรงกับ cfg.translation.backend"
+            f"ไม่พบ API key สำหรับ backend '{cfg.translation.backend}': "
+            "กรุณาคัดลอก .env.example เป็น .env แล้วใส่ key "
+            "(หรือตั้ง environment variable ให้ตรงกับ provider)"
         )
 
     # สร้าง pipeline (คอมโพเนนต์ถูกสร้างจาก config อัตโนมัติ)

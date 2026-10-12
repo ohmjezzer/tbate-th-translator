@@ -14,7 +14,6 @@ config.py
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -77,6 +76,7 @@ class TranslationConfig:
     temperature: float = 0.3
     max_tokens: int = 4096
     target_lang: str = "Thai"
+    base_url: str = ""                   # endpoint ทางเลือก (OpenRouter/Groq/DeepSeek/self-host)
     glossary_path: str = "config/glossary.json"
     characters_path: str = "config/characters.json"
     cache_path: str = ".scanlation/translation_cache.json"
@@ -154,8 +154,16 @@ class ScanlationConfig:
 
     # ---- loading ---------------------------------------------------------
     @staticmethod
-    def load(path: str | Path) -> "ScanlationConfig":
-        """โหลด config จาก .json หรือ .yaml แล้ว merge ทับค่า default"""
+    def load(path: str | Path, apply_env_overrides: bool = True) -> "ScanlationConfig":
+        """
+        โหลด config จาก .json หรือ .yaml แล้ว merge ทับค่า default
+
+        ลำดับความสำคัญ:  env ในเชลล์  >  ไฟล์ .env  >  ไฟล์ config  >  ค่าดีฟอลต์
+        (ถ้า apply_env_overrides=True ซึ่งเป็นค่าดีฟอลต์)
+        """
+        from .env import apply_env, load_dotenv
+
+        load_dotenv()                      # อ่าน .env ถ้ามี (ไม่ทับ env จริงในเชลล์)
         p = Path(path)
         text = p.read_text(encoding="utf-8")
         if p.suffix in (".yaml", ".yml"):
@@ -175,13 +183,24 @@ class ScanlationConfig:
             for k, v in (values or {}).items():
                 if hasattr(target, k):
                     setattr(target, k, v)
+        if apply_env_overrides:
+            apply_env(cfg)
         return cfg
+
+    @classmethod
+    def from_env(cls, dotenv_path: str = ".env") -> "ScanlationConfig":
+        """สร้าง config จากค่าดีฟอลต์ แล้วให้ environment variable ทับทั้งหมด"""
+        from .env import apply_env, load_dotenv
+
+        load_dotenv(dotenv_path)
+        return apply_env(cls())
 
     # ---- อ่าน API key จาก environment ------------------------------------
     def api_key(self) -> Optional[str]:
-        """ดึง API key ของ backend ที่เลือกจาก environment variable"""
-        if self.translation.backend == "anthropic":
-            return os.environ.get("ANTHROPIC_API_KEY")
-        if self.translation.backend == "openai":
-            return os.environ.get("OPENAI_API_KEY")
-        return None
+        """
+        ดึง API key ของ backend ที่เลือกจาก environment variable
+        รองรับหลายเจ้า (anthropic/openai/gemini/deepseek/groq/openrouter/...)
+        """
+        from .env import resolve_api_key
+
+        return resolve_api_key(self.translation.backend)

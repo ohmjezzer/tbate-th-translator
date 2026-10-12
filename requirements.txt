@@ -15,6 +15,7 @@ pythainlp>=4.0
 
 # --- โหลด config ---
 PyYAML>=6.0
+python-dotenv>=1.0           # อ่านไฟล์ .env (ถ้าไม่มีจะใช้ตัว parse ในตัวแทน)
 
 # --- ดาวน์โหลดรูปจากเว็บ (สเตจ Download & Ingest) ---
 requests>=2.31

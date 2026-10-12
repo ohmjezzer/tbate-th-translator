@@ -37,6 +37,9 @@ dependencies:
       # --- ดาวน์โหลดรูปจากเว็บ ---
       - requests>=2.31
 
+      # --- อ่านไฟล์ .env ---
+      - python-dotenv>=1.0
+
       # --- OCR ---
       - easyocr>=1.7
       - pytesseract>=0.3.10

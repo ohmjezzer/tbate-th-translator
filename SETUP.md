@@ -20,7 +20,7 @@
 | **libraqm** | ✅ บังคับ (สำหรับไทย) | ให้ Pillow จัดวางสระ/วรรณยุกต์ไทยถูกต้อง |
 | **GPU NVIDIA + CUDA** | ⭕ ไม่บังคับ | ไม่มีก็รันได้ แต่ SAM/LaMa จะช้า (ใช้ CPU) |
 | **Tesseract** | ⭕ ไม่บังคับ | ต้องมีเฉพาะถ้าตั้ง `ocr_engine: "tesseract"` |
-| **API key** (Anthropic/OpenAI) | ⭕ ไม่บังคับ | ขาดได้ ถ้าไม่ใช้สเตจแปล (demo/ดาวน์โหลดยังใช้ได้) |
+| **API key** (Anthropic/OpenAI/…) | ⭕ ไม่บังคับ | ขาดได้ ถ้าไม่ใช้สเตจแปล (demo/ดาวน์โหลดยังใช้ได้) — ตั้งใน `.env` |
 
 > ⚠️ **เรื่องเวอร์ชัน Python:** โปรเจกต์นี้ทดสอบบน Python 3.11 เป็นหลัก
 > ถ้าใช้ 3.13/3.14 อาจมีบางแพ็กเกจ (easyocr, torch บางรุ่น) ยังไม่รองรับ
@@ -36,6 +36,13 @@ cd tbate-th-translator
 git checkout v2-upgrade        # สาขาที่มี Scanlation Engine v2
 ```
 
+> ถ้ายังไม่ merge เข้า `main` ให้ใช้สาขา `v2-upgrade` ตามด้านบน
+
+💡 **ตั้งค่าเร็วสุด (3 คำสั่ง)** — คัดลอกตัวอย่าง `.env` แล้วใส่ AI key:
+```bash
+cp .env.example .env        # Windows: copy .env.example .env
+# เปิด .env แล้วใส่ ANTHROPIC_API_KEY=...  (รายละเอียดในข้อ 4)
+```
 > ถ้ายังไม่ merge เข้า `main` ให้ใช้สาขา `v2-upgrade` ตามด้านบน
 
 ---
@@ -138,50 +145,123 @@ brew install libraqm tesseract
 
 ---
 
-## 4) ตั้งค่า API key (สำหรับสเตจแปล)
+## 4) ตั้งค่าด้วยไฟล์ `.env` (แนะนำ — ตั้งได้ทุกตัว)
 
-โปรเจกต์อ่าน key จาก **environment variable** (ไม่เก็บในโค้ด/ไฟล์ config เพื่อความปลอดภัย)
+โปรเจกต์มีไฟล์ตัวอย่าง **`.env.example`** ที่รวมค่าตั้งได้ **ทุกตัว** ไว้แล้ว
+สร้างไฟล์ใช้งานจริงด้วย:
 
-| ตัวแปร | ใช้เมื่อ |
-|---|---|
-| `ANTHROPIC_API_KEY` | `translation.backend = "anthropic"` (Claude 3.5 Sonnet) |
-| `OPENAI_API_KEY` | `translation.backend = "openai"` (GPT-4o) |
+```bash
+cp .env.example .env
+```
 
-### 🪟 Windows
+จากนั้นเปิด `.env` แล้วแก้ค่าที่ต้องการ — ระบบจะ **โหลดให้อัตโนมัติ** เมื่อรัน
+(ทั้ง CLI, `pipeline_example.py` และ `ScanlationConfig.load()`)
 
-**ตั้งแบบถาวร (ต้องเปิด terminal ใหม่):**
+> 🔒 `.env` ถูกกันไว้ใน `.gitignore` แล้ว (ไม่ถูก commit) ส่วน `.env.example` ปลอดภัยที่จะ commit
+
+### ลำดับความสำคัญของค่า (ตัวที่อยู่บนจะทับตัวล่าง)
+```
+environment variable ในเชลล์   ← สูงสุด (ใช้ชั่วคราว/CI ได้)
+        ↓
+ไฟล์ .env                      ← แนะนำสำหรับตั้งค่าประจำเครื่อง
+        ↓
+ไฟล์ config/config.json        ← ค่าดีฟอลต์ของโปรเจกต์
+        ↓
+ค่าดีฟอลต์ในโค้ด               ← ต่ำสุด
+```
+
+### ตัวอย่าง `.env` ขั้นต่ำ (แค่ใส่ AI key + เปิด GPU)
+```dotenv
+# --- AI (สเตจแปล) ---
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxx
+
+# --- เลือกผู้ให้บริการ/โมเดล ---
+SCANLATION_TRANSLATION_BACKEND=anthropic
+SCANLATION_TRANSLATION_MODEL=claude-3-5-sonnet-latest
+
+# --- อุปกรณ์ (cpu | cuda | mps) ---
+SCANLATION_PROFILE=gpu
+```
+
+### ตัวช่วยสุดสะดวก: `SCANLATION_PROFILE`
+ตั้งค่าเดียว ปรับอุปกรณ์ทั้งระบบให้เอง:
+```dotenv
+SCANLATION_PROFILE=cpu     # SAM+Inpaint = cpu, เลือก SAM รุ่น vit_b ให้เอง
+SCANLATION_PROFILE=gpu     # SAM+Inpaint = cuda
+```
+หรือจะตั้งอุปกรณ์เดียวใช้ทั้งระบบด้วย `SCANLATION_DEVICE=cuda` ก็ได้
+(ถ้าตั้ง `SCANLATION_SAM_DEVICE` / `SCANLATION_INPAINT_DEVICE` แยก จะทับค่านี้)
+
+### 🔑 API key ของผู้ให้บริการ AI ทุกตัว (ใส่เฉพาะเจ้าที่ใช้)
+
+| ตัวแปร | ผู้ให้บริการ | ตัวอย่างโมเดล (ตั้งใน `SCANLATION_TRANSLATION_MODEL`) |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic (Claude) | `claude-3-5-sonnet-latest`, `claude-3-7-sonnet-latest` |
+| `OPENAI_API_KEY` | OpenAI (GPT) | `gpt-4o`, `gpt-4.1` |
+| `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Azure OpenAI | `gpt-4o` |
+| `GEMINI_API_KEY` (หรือ `GOOGLE_API_KEY`) | Google Gemini | `gemini-2.5-pro` |
+| `DEEPSEEK_API_KEY` | DeepSeek | `deepseek-chat` |
+| `GROQ_API_KEY` | Groq | `llama-3.3-70b-versatile` |
+| `MISTRAL_API_KEY` | Mistral | `mistral-large-latest` |
+| `OPENROUTER_API_KEY` | OpenRouter (รวมหลายเจ้า) | เช่น `anthropic/claude-3.5-sonnet` |
+| `TOGETHER_API_KEY` | Together AI | — |
+| `XAI_API_KEY` | xAI (Grok) | `grok-2-latest` |
+| `PERPLEXITY_API_KEY` | Perplexity | — |
+| `COHERE_API_KEY` | Cohere | — |
+| `FIREWORKS_API_KEY` | Fireworks AI | — |
+| `CEREBRAS_API_KEY` | Cerebras | — |
+| `HF_TOKEN` | Hugging Face (โหลดโมเดล) | — |
+| `REPLICATE_API_TOKEN` | Replicate | — |
+
+**วิธีเลือกผู้ให้บริการ:** ตั้ง `SCANLATION_TRANSLATION_BACKEND` ให้ตรงกับเจ้าของ key
+เช่น
+```dotenv
+SCANLATION_TRANSLATION_BACKEND=deepseek
+SCANLATION_TRANSLATION_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=sk-xxxxxxxx
+```
+> ผู้ให้บริการที่ไม่ใช่ Anthropic จะเชื่อมผ่าน API แบบ **OpenAI-compatible**
+> โดยระบบรู้จัก base_url ของแต่ละเจ้าให้แล้ว (DeepSeek/Groq/OpenRouter/Mistral/xAI/…)
+
+### รายการค่าตั้งทั้งหมด
+ดูได้ใน `.env.example` (จัดเป็นหมวด: API keys / Profile / Translation / Detection /
+Inpainting / Typesetting / Download / Paths) — มีให้ตั้ง **ทุกตัว** รวม 60+ ค่า
+หรือรันคำสั่งนี้เพื่อดูว่ามีตัวไหนตั้งอยู่แล้ว:
+```bash
+python -c "from scanlation.env import env_report, ENV_MAP; print(len(ENV_MAP),'ตัวที่ตั้งได้'); print(env_report())"
+```
+
+### ทางเลือก: ตั้งผ่าน environment variable โดยตรง (ไม่ใช้ .env)
+
+**🐧🍎 macOS / Linux — ชั่วคราว:**
+```bash
+export ANTHROPIC_API_KEY="sk-ant-xxxxxxxx"
+export SCANLATION_PROFILE=gpu
+```
+**ถาวร** — ใส่บรรทัด `export ...` ใน `~/.bashrc` (หรือ `~/.zshrc`) แล้ว `source ~/.bashrc`
+
+**🪟 Windows — ถาวร:**
 ```powershell
 setx ANTHROPIC_API_KEY "sk-ant-xxxxxxxx"
+setx SCANLATION_PROFILE "gpu"
 ```
-**ตั้งชั่วคราว (ใช้เฉพาะ session นี้):**
-```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-xxxxxxxx"     # PowerShell
-set ANTHROPIC_API_KEY=sk-ant-xxxxxxxx          # cmd
-```
+**ชั่วคราว:** `$env:ANTHROPIC_API_KEY = "..."` (PowerShell) หรือ `set ANTHROPIC_API_KEY=...` (cmd)
 
-### 🐧🍎 macOS / Linux
-
-**ตั้งชั่วคราว (ใช้เฉพาะ session):**
+### ✅ ตรวจว่า .env ถูกโหลดแล้ว
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-xxxxxxxx"
-```
-**ตั้งแบบถาวร** — ใส่บรรทัดนี้ในไฟล์ `~/.bashrc` (หรือ `~/.zshrc`):
-```bash
-export ANTHROPIC_API_KEY="sk-ant-xxxxxxxx"
-```
-แล้วรัน `source ~/.bashrc` (หรือเปิด terminal ใหม่)
-
-### ✅ ตรวจว่า key ถูกตั้งแล้ว
-```bash
-python -c "import os; print('มี key' if os.environ.get('ANTHROPIC_API_KEY') else 'ยังไม่มี')"
+python scripts/check_env.py            # ดูหัวข้อ "0) ไฟล์ .env และ environment variable"
+python -c "from scanlation.config import ScanlationConfig; c=ScanlationConfig.from_env(); print(c.translation.backend, c.api_key() and 'มี key' or 'ไม่มี key')"
 ```
 
-> 🔐 **ความปลอดภัย:** อย่า commit key ลง git — โปรเจกต์มี `.gitignore` ที่กัน `.env` ไว้แล้ว
-> ถ้าใช้หลาย key/สลับ provider บ่อย แนะนำตั้งเป็น script `env.sh` (ที่ gitignore ไว้)
+> 🔐 **ความปลอดภัย:** อย่า commit `.env` ลง git — โปรเจกต์กันไว้แล้ว
+> และอย่าแปะ key ลงใน issue/แชท ถ้า key หลุดให้ revoke แล้วออกใหม่ทันที
 
 ---
 
-## 5) ตั้งค่าไฟล์ config (ไม่บังคับ)
+## 5) ตั้งค่าไฟล์ config (ไม่บังคับ — ปรับผ่าน `.env` ได้แทน)
+
+> 💡 ปัจจุบันค่าทุกตัวของ `config.json` ตั้งผ่าน `.env` ได้หมดแล้ว (ดูข้อ 4)
+> `config.json` ยังใช้ได้อยู่ และจะมีผลก็ต่อเมื่อ env/.env ไม่ได้ตั้งค่านั้นทับ
 
 ไฟล์ `config/config.json` มีค่าดีฟอลต์พร้อมใช้ แต่ควรปรับ 2–3 จุดนี้ตามเครื่อง:
 
@@ -246,9 +326,9 @@ pip install -r requirements-ml.txt
 python scripts/download_weights.py --model vit_h
 sudo apt-get install -y libraqm-dev tesseract-ocr          # ระบบ (Linux)
 
-# --- ตั้งค่า ---
-export ANTHROPIC_API_KEY="sk-ant-xxxx"                     # macOS/Linux
-setx ANTHROPIC_API_KEY "sk-ant-xxxx"                       # Windows (ถาวร)
+# --- ตั้งค่า (คัดลอกตัวอย่าง .env แล้วแก้ค่า) ---
+cp .env.example .env
+#   แก้ในไฟล์ .env:  ANTHROPIC_API_KEY=..., SCANLATION_PROFILE=gpu  เป็นต้น
 
 # --- ตรวจสอบ ---
 python scripts/check_env.py
@@ -274,7 +354,7 @@ python -m scanlation.cli sources                               # ดู source �
 | `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `cfg.inpainting.method = "median"` ชั่วคราว |
 | SAM ช้ามากตอนเริ่มหน้าแรก | SAM encode ภาพทั้งหน้า | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |
 | `CUDA out of memory` | GPU ไม่พอ | ตั้ง `sam_device = "cpu"` หรือใช้ `vit_b` |
-| `401 / authentication_error` | API key ผิด/ไม่ตั้ง | ตั้ง API key ใหม่ (ข้อ 4) |
+| `401 / authentication_error` | API key ผิด/ไม่ตั้ง | ตั้งใน `.env` (ดูข้อ 4) แล้วรัน `python scripts/check_env.py` |
 | `cannot write mode RGBA as JPEG` | บันทึกภาพ RGBA เป็น JPEG | โปรเจกต์จัดการให้แล้ว (แปลงเป็น RGB) — ถ้าเจอ ให้อัปเดต Pillow |
 | ดาวน์โหลดได้ไม่ครบทุกหน้า | เว็บเปลี่ยนโครงสร้าง / หน้าโดนล็อก | ดู `.scanlation/download_manifest.json` ว่า URL ไหนล้มเหลว; ปรับ `source_regex` หรือเพิ่ม cookie |
 | `pip install segment-anything` ค้าง/ล้มเหลว | ต้องมี git + คอมไพล์ | ติดตั้ง git ก่อน; ถ้ามี GPU ให้ลง torch เรียบร้อยก่อน |

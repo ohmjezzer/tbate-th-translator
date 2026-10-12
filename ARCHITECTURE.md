@@ -14,6 +14,7 @@
 | **Dependency Injection** | `ScanlationPipeline(...)` รับคอมโพเนนต์เข้าทาง constructor → mock/สลับได้ในเทสต์และ production |
 | **Open/Closed + Registry** | เพิ่มโมเดลใหม่ = เขียนคลาส + `@register(...)` โดยไม่แก้ pipeline |
 | **Pure data contracts** | ข้อมูลไหลเวียนผ่าน `schemas.py` เท่านั้น ทุกสเตจ serialize เป็น JSON ได้ |
+| **Config layering (12-factor)** | ค่าตั้งทุกตัว override ได้ด้วย env/.env: `env เชลล์ > .env > config.json > ดีฟอลต์` ผ่าน `scanlation/env.py` |
 | **Inspectable & Resumable** | ทุกสเตจ dumps intermediate ลง `.scanlation/*.json` → debug/แก้ไข/รันต่อได้ |
 | **Lazy Initialization** | `ScanlationPipeline` สร้างคอมโพเนนต์ (SAM/LaMa/LLM) เมื่อ "เรียกใช้ครั้งแรก" เท่านั้น → คำสั่ง `download` ไม่ต้องโหลดโมเดลหนัก |
 | **Fail-safe** | โมดูล ML หนัก (torch/easyocr/sam) ถูก import แบบ lazy → import แพ็กเกจได้แม้ยังไม่ติดตั้งโมเดล |
@@ -96,6 +97,16 @@ Page
 BBox      : x0,y0,x1,y1 + width/height/area/center, expand(), clip(), iou(), union()
 TextBlock : uid, bbox, source_text, confidence, kind, translation, meta
 ImageRef  : index, url, page_label, meta          ← สเตจ 0 (ก่อนดาวน์โหลด)
+```
+
+### 3.1) ลำดับชั้นการตั้งค่า (Configuration layering) — `scanlation/env.py`
+
+```
+os.environ (เชลล์) ─┐
+.env (dotenv)   ────┼─► apply_env(cfg) ─► ScanlationConfig  (พร้อมใช้)
+config.json     ────┤       ENV_MAP: ENV_NAME -> (section, field, cast_fn)
+ค่าดีฟอลต์        ───┘       + ตัวช่วย: SCANLATION_DEVICE / SCANLATION_PROFILE
+                            + API key: PROVIDER_API_KEYS[backend]
 ```
 
 - `kind` (BlockKind): `speech | narration | sfx | credit | unknown`

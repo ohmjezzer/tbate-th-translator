@@ -22,7 +22,10 @@ demo_page.json
 
 # --- ความลับ ---
 .env
+.env.local
+.env.*.local
 *.key
+# (ไฟล์ .env.example ปลอดภัยที่จะ commit — ไม่ถูก ignore)
 
 # --- OS / Editor ---
 .DS_Store
