@@ -15,6 +15,7 @@
 | **Open/Closed + Registry** | เพิ่มโมเดลใหม่ = เขียนคลาส + `@register(...)` โดยไม่แก้ pipeline |
 | **Pure data contracts** | ข้อมูลไหลเวียนผ่าน `schemas.py` เท่านั้น ทุกสเตจ serialize เป็น JSON ได้ |
 | **Inspectable & Resumable** | ทุกสเตจ dumps intermediate ลง `.scanlation/*.json` → debug/แก้ไข/รันต่อได้ |
+| **Lazy Initialization** | `ScanlationPipeline` สร้างคอมโพเนนต์ (SAM/LaMa/LLM) เมื่อ "เรียกใช้ครั้งแรก" เท่านั้น → คำสั่ง `download` ไม่ต้องโหลดโมเดลหนัก |
 | **Fail-safe** | โมดูล ML หนัก (torch/easyocr/sam) ถูก import แบบ lazy → import แพ็กเกจได้แม้ยังไม่ติดตั้งโมเดล |
 
 ---
@@ -22,6 +23,17 @@
 ## 2) แผนภาพคลาส (Class Diagram)
 
 ```
+                          ┌────────────────────────────┐
+                          │        <<ABC>>             │
+                          │       ChapterSource        │
+                          └────────────┬───────────────┘
+                                       │ implements
+        ┌──────────────────────────────┼──────────────────────────────┐
+        ▼                              ▼                              ▼
+ VortexScansSource            GenericJsonSource              GenericHtmlSource
+       │
+       └─► ChapterDownloader ──► ImageConverter (บังคับ WebP) ──► orig/page-XXXX.webp
+
                           ┌────────────────────────────┐
                           │        <<ABC>>             │
                           │       TextDetector         │
@@ -83,6 +95,7 @@ Page
 
 BBox      : x0,y0,x1,y1 + width/height/area/center, expand(), clip(), iou(), union()
 TextBlock : uid, bbox, source_text, confidence, kind, translation, meta
+ImageRef  : index, url, page_label, meta          ← สเตจ 0 (ก่อนดาวน์โหลด)
 ```
 
 - `kind` (BlockKind): `speech | narration | sfx | credit | unknown`
@@ -90,9 +103,15 @@ TextBlock : uid, bbox, source_text, confidence, kind, translation, meta
 
 ---
 
-## 4) ลำดับการทำงาน (Sequence) — `ScanlationPipeline.process_page()`
+## 4) ลำดับการทำงาน (Sequence) — `ScanlationPipeline`
 
 ```
+caller ──download(chapter_url)          [สเตจ 0 — ไม่โหลดโมเดลหนัก]
+  │
+  └─(0) ChapterSource.list_images(url) ─► ImageRef[]
+           └─► ThreadPool: GET(url) ─► ImageConverter.to_webp ─► orig/page-XXXX.webp
+           └─ manifest: .scanlation/download_manifest.json
+
 caller ──process_page(image_path)
   │
   ├─(1) DetectionPipeline.detect_page(image)
@@ -116,6 +135,28 @@ caller ──process_page(image_path)
 ---
 
 ## 5) คู่มือขยายผล (Extension Guide)
+
+### 5.0 เพิ่ม Download Source ใหม่ (เช่น เว็บอื่น)
+
+```python
+# scanlation/downloader/mysite.py
+import re
+from ..utils.registry import register
+from .base import ChapterSource, ImageRef
+
+@register("source", "mysite")
+class MySiteSource(ChapterSource):
+    def __init__(self, config):
+        self.cfg = config
+    def list_images(self, chapter_url):
+        html = self.fetch_text(chapter_url)
+        urls = re.findall(r'https://cdn\.mysite\.com/[^"\']+\.(?:webp|jpg|png)', html)
+        return [ImageRef(index=i, url=u, page_label=f"page-{i:04d}")
+                for i, u in enumerate(urls, 1)]
+```
+
+แล้วตั้ง `cfg.download.source = "mysite"` — ตัว `ChapterDownloader` จะบังคับ
+แปลงเป็น WebP และตั้งชื่อไฟล์ให้เองโดยอัตโนมัติ (ไม่ต้องแก้ downloader)
 
 ### 5.1 เพิ่มโมเดล Inpainting ใหม่ (เช่น MAT, MI-GAN)
 
@@ -171,6 +212,8 @@ class GeminiBackend(LLMBackend):
 
 | ทางเลือก | ที่เลือกใช้ | เหตุผล |
 |----------|-------------|--------|
+| Download | **requests + ThreadPoolExecutor** | เบา, มี retry/stream, ดาวน์โหลดขนานได้ |
+| Image format | **WebP (บังคับ)** | ลดขนาดไฟล์, ทำให้ downstream ทำงานสม่ำเสมอ, คงคุณภาพ |
 | Segmentation | **SAM (vit_h/vit_l/vit_b)** | mask แนบรูปทรงบอลลูนจริง, prompt ด้วย box จาก OCR ได้ตรง ๆ |
 | (ทางเลือกเบา) | **FastSAM** | รันบน CPU ได้, เร็วกว่า, เหมาะ deploy ไม่มี GPU |
 | Inpainting | **LaMa** | ขึ้นชื่อเรื่อง large-mask, ให้พื้นหลังเนียนต่อเนื่อง |
@@ -200,7 +243,8 @@ def test_inpainter_contract():
 
 ## 8) แผนขยายในอนาคต (Roadmap)
 
-1. **SAM2 / video tracking** — ลดภาระการ re-detect เมื่อบอลลูนอยู่ตำแหน่งเดิม
+1. **Download ซับซ้อนขึ้น** — login/session, cloudflare bypass, ดึงทั้งเรื่อง (ทุก chapter) พร้อมคิว
+2. **SAM2 / video tracking** — ลดภาระการ re-detect เมื่อบอลลูนอยู่ตำแหน่งเดิม
 2. **Comic-text-detector** (YOLO) แทน OCR เพื่อหาข้อความที่ OCR อ่านไม่ออก
 3. **Batch API + async** — แปลหลายหน้า/หลายเรื่องพร้อมกัน
 4. **Web UI / queue** — ตรวจและแก้ mask/คำแปลแบบคลิกได้

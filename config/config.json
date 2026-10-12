@@ -6,6 +6,25 @@
     "fonts_dir": "fonts",
     "config_dir": "config"
   },
+  "download": {
+    "source": "vortexscans",
+    "out_dir": "",
+    "prefix": "page",
+    "start_index": 1,
+    "webp_quality": 92,
+    "webp_method": 6,
+    "max_width": 0,
+    "force_webp": true,
+    "overwrite": true,
+    "limit": 0,
+    "max_workers": 4,
+    "retries": 3,
+    "timeout": 60.0,
+    "referer": "",
+    "manifest_path": "",
+    "image_urls_file": "",
+    "source_regex": ""
+  },
   "detection": {
     "ocr_engine": "easyocr",
     "ocr_langs": ["en"],

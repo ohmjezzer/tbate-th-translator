@@ -16,6 +16,9 @@ pythainlp>=4.0
 # --- โหลด config ---
 PyYAML>=6.0
 
+# --- ดาวน์โหลดรูปจากเว็บ (สเตจ Download & Ingest) ---
+requests>=2.31
+
 # --- OCR ---
 easyocr>=1.7                 # ค่าเริ่มต้นของโปรเจกต์
 pytesseract>=0.3.10          # ทางเลือกสำรอง (ต้อง apt-get install tesseract-ocr ด้วย)
