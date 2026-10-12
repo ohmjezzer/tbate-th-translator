@@ -2,17 +2,27 @@
 """
 pipeline_example.py
 ===================
-ตัวอย่างการใช้งานจริง: เชื่อมทั้ง 4 ขั้นตอนเข้าด้วยกัน
+ตัวอย่างการใช้งานจริง: เชื่อมทั้ง 5 ขั้นตอนเข้าด้วยกัน
 
-    Detection & Masking (OCR + SAM)
+    Download & Ingest (ดึงรูปจากเว็บ → บังคับ WebP → orig/)
+        → Detection & Masking (OCR + SAM)
         → Inpainting (LaMa)
         → Translation (Claude 3.5 Sonnet / GPT-4o)
         → Typesetting (Pillow + ฟอนต์ไทย)
 
 รันแบบเต็มระบบ:
     export ANTHROPIC_API_KEY=sk-ant-...        # หรือ OPENAI_API_KEY
-    python pipeline_example.py --demo          # ลองกับภาพจำลอง (ไม่ต้องมี API key)
-    python pipeline_example.py                 # ประมวลผลโฟลเดอร์ orig/ -> out/
+
+    # 0) ดาวน์โหลด chapter จากเว็บ → บังคับ WebP → orig/ แล้วแปลต่อทันที
+    python pipeline_example.py --chapter-url https://vortexscans.org/series/the-beginning-after-the-end/chapter-255
+    python pipeline_example.py --chapter-url <url> --limit 3      # ทดลอง 3 หน้าแรก
+
+    # 1) ลองกับภาพจำลอง (ไม่ต้องมี API key / โมเดล)
+    python pipeline_example.py --demo
+
+    # 2) ประมวลผลโฟลเดอร์ orig/ ที่มีอยู่แล้ว -> out/
+    python pipeline_example.py
+    python pipeline_example.py 4 23 26
 
 อ่านโค้ดจากบนลงล่าง: แต่ละคอมเมนต์อธิบายว่า "ทำไม" ไม่ใช่แค่ "ทำอะไร"
 """
@@ -27,12 +37,55 @@ import numpy as np
 
 from scanlation.config import (
     DetectionConfig,
+    DownloadConfig,
     InpaintingConfig,
     ScanlationConfig,
     TranslationConfig,
     TypesettingConfig,
 )
+from scanlation.downloader import ChapterDownloader
 from scanlation.pipeline import ScanlationPipeline
+
+
+# ===========================================================================
+# โหมด 0: download — ดึงรูปจากเว็บ → บังคับแปลง WebP → วางใน orig/
+# ===========================================================================
+def run_download(chapter_url: str, limit: int, out_dir: str | None,
+                 translate: bool, pages: list[int] | None) -> None:
+    """
+    สาธิตสเตจ Download & Ingest:
+        1) ChapterDownloader เลือก source (vortexscans/generic-*) จาก config
+        2) source.list_images(url) -> รายการ ImageRef (เรียงตามหน้า)
+        3) ดาวน์โหลดแบบขนาน -> ImageConverter บังคับเป็น WebP -> page-XXXX.webp
+    แล้ว (ถ้า translate=True) ส่งต่อให้ pipeline แปลทันที
+    """
+    cfg = ScanlationConfig()
+    cfg.download.limit = limit
+    if out_dir:
+        cfg.download.out_dir = out_dir
+
+    # --- ใช้ ChapterDownloader ตรง ๆ ---
+    downloader = ChapterDownloader(cfg.download)
+    report = downloader.download_chapter(chapter_url)
+    print(report.summary())
+    for f in report.files[:5]:
+        print("   ", f)
+    if report.failed:
+        print(f"   (มี {report.failed} หน้าที่ล้มเหลว)")
+
+    if not translate:
+        print("\nดาวน์โหลดเสร็จ — รันต่อด้วย:  python -m scanlation.cli run")
+        return
+
+    # --- หรือจะใช้ pipeline ทางลัด (download + run) ก็ได้ ---
+    if not cfg.api_key():
+        print("\n(ข้ามการแปล: ไม่พบ API key — ตั้ง ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+        return
+    pipeline = ScanlationPipeline(cfg)
+    results = pipeline.run(pages=pages)
+    for r in results:
+        print(f"หน้า {r.page_index:>3} → {r.output_path}")
+
 
 
 # ===========================================================================
@@ -139,10 +192,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="ตัวอย่างการใช้งาน Scanlation Pipeline")
     ap.add_argument("--config", help="path ไปยัง config.json")
     ap.add_argument("--demo", action="store_true", help="รันเดโมโดยไม่ต้องใช้ GPU/API key")
+    ap.add_argument("--chapter-url", help="URL ของ chapter ที่จะดาวน์โหลด+แปล (โหมด download)")
+    ap.add_argument("--limit", type=int, default=0, help="จำกัดจำนวนหน้าที่ดาวน์โหลด (0=ทั้งหมด)")
+    ap.add_argument("--out", help="โฟลเดอร์ปลายทางของรูปที่ดาวน์โหลด (ดีฟอลต์ orig)")
+    ap.add_argument("--download-only", action="store_true", help="ดาวน์โหลดอย่างเดียว ไม่แปลต่อ")
     ap.add_argument("pages", nargs="*", help="เลขหน้าที่ต้องการ (โหมดเต็มระบบ)")
     args = ap.parse_args()
 
-    if args.demo:
+    if args.chapter_url:
+        run_download(args.chapter_url, args.limit, args.out,
+                     translate=not args.download_only, pages=[int(x) for x in args.pages] or None)
+    elif args.demo:
         run_demo()
     else:
         pages = [int(x) for x in args.pages] if args.pages else None

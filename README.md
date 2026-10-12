@@ -3,10 +3,11 @@
 ระบบ **สแกนเลชัน/แปลมังงะอัตโนมัติ** เวอร์ชันอัปเกรดจากโปรเจกต์
 [`tbate-th-translator`](https://github.com/ohmjezzer/tbate-th-translator) เดิม
 (EasyOCR/Tesseract + OpenCV) ให้เป็น **สถาปัตยกรรมแบบโมดูลที่ขยายผลได้** พร้อม
-โมเดลทันสมัย 4 ขั้นตอน:
+**5 ขั้นตอน**:
 
 | ขั้น | งาน | เทคโนโลยีใหม่ | เทียบกับของเดิม |
 |-----|------|----------------|------------------|
+| **0. Download & Ingest** | ดึงรูปจากเว็บ → บังคับ WebP → `orig/` | **ChapterSource + ImageConverter** (requests + Pillow) | เดิมดาวน์โหลดมือ |
 | **1. Detection & Masking** | หาข้อความ + ตัดขอบเขตบอลลูน | **SAM (Segment Anything Model, Meta)** / FastSAM | เดิมใช้กรอบสี่เหลี่ยมแข็ง ๆ |
 | **2. Inpainting** | ลบข้อความต้นฉบับ | **LaMa** (Large-Mask Inpainting) / IOPaint | เดิมใช้ `cv2.inpaint` |
 | **3. Translation** | แปลเป็นไทย | **Claude 3.5 Sonnet / GPT-4o** + Character Context | เดิมกรอกคำแปลมือใน `data.py` |
@@ -38,12 +39,12 @@
 ```
                        ScanlationPipeline (scanlation/pipeline.py)
                        ───────────────────────────────────────────
-  ภาพต้นฉบับ ──► [1] Detection & Masking ──► [2] Inpainting ──► [4] Typesetting ──► ภาพผลลัพธ์
-   (orig/*.webp)   OCR + SAM → Bubble[]      LaMa (mask→clean)   Pillow (วาดไทย)
-                              │                                        ▲
-                              └────────────► [3] Translation ─────────┘
-                                             Claude/GPT-4o
-                                             → Bubble.translation
+  เว็บต้นทาง ─► [0] Download & Ingest ─► [1] Detection & Masking ─► [2] Inpainting ─► [4] Typesetting ─► ภาพผลลัพธ์
+  (chapter URL)  source+WebP→orig/       OCR + SAM → Bubble[]      LaMa (mask→clean)   Pillow (วาดไทย)
+                                              │                                            ▲
+                                              └──────────────► [3] Translation ───────────┘
+                                                              Claude/GPT-4o
+                                                              → Bubble.translation
 ```
 
 **ลำดับการทำงานจริงใน `process_page()`** (หมายเหตุ: แปลก่อน inpaint เพราะต้องอ่านข้อความต้นฉบับ)
@@ -67,6 +68,12 @@ scanlation/
 │   ├── geometry.py       # iou / merge / mask / polygon
 │   ├── registry.py       # ★ plugin registry → สลับโมเดลด้วยชื่อใน config
 │   └── logging_utils.py
+├── downloader/           # [0] ดึงรูปจากเว็บ → บังคับ WebP
+│   ├── base.py           #   interface: ChapterSource, ImageRef
+│   ├── vortexscans.py    #   VortexScansSource (เว็บตัวอย่าง)
+│   ├── generic.py        #   GenericJsonSource, GenericHtmlSource (เว็บอื่น)
+│   ├── converter.py      #   ImageConverter (บังคับ WebP)
+│   └── downloader.py     #   ChapterDownloader (orchestrator + manifest)
 ├── detection/            # [1] OCR + SAM
 │   ├── base.py           #   interface: TextDetector, BubbleSegmenter
 │   ├── ocr_detector.py   #   EasyOCRDetector, TesseractDetector
@@ -165,7 +172,44 @@ python -m scanlation.cli init-config    # สร้าง config ตัวอย
 
 ผลลัพธ์: `out/page-XXXX.png` และไฟล์ intermediate ใน `.scanlation/`
 
-### 4.3 ใช้ผ่านโค้ด (Python API)
+### 4.3 ดาวน์โหลดรูปจากเว็บ (สเตจ 0)
+
+```bash
+# ดาวน์โหลด chapter → บังคับแปลงเป็น WebP → วางใน orig/ (พร้อมให้ pipeline อ่านต่อ)
+python -m scanlation.cli download "https://vortexscans.org/series/the-beginning-after-the-end/chapter-255"
+
+# ตัวเลือกที่มีให้ใช้
+python -m scanlation.cli download <url> --limit 3            # ทดลอง 3 หน้าแรก
+python -m scanlation.cli download <url> --out orig --workers 6 --quality 92
+python -m scanlation.cli download <url> --source vortexscans # ระบุ source
+python -m scanlation.cli download <url> --run                # ดาวน์โหลดเสร็จแล้วแปลต่อทันที
+python -m scanlation.cli sources                             # ดู source ที่รองรับ
+```
+
+**รับประกันว่าไฟล์ที่ได้เป็น WebP เสมอ** — ต่อให้ต้นทางเป็น `.jpg/.png/.webp`
+ก็จะถูกแปลงเป็น `orig/page-0001.webp, page-0002.webp, …` เรียงตามลำดับหน้า
+และเขียน `manifest` ไว้ที่ `.scanlation/download_manifest.json` (เก็บ URL ต้นทาง
+ของทุกหน้า ไว้ตรวจสอบ/ทำซ้ำได้)
+
+ผ่านโค้ด Python:
+```python
+from scanlation.config import ScanlationConfig
+from scanlation.pipeline import ScanlationPipeline
+
+cfg = ScanlationConfig()
+cfg.download.source = "vortexscans"
+cfg.download.max_workers = 6
+cfg.download.limit = 0
+
+pipe = ScanlationPipeline(cfg)
+report = pipe.download("https://vortexscans.org/series/<slug>/chapter-255")
+print(report.summary())          # [download] vortexscans: 41/41 หน้า ...
+
+# หรือดาวน์โหลด + แปลต่อในคำสั่งเดียว
+pipe.download_and_run("https://vortexscans.org/series/<slug>/chapter-255")
+```
+
+### 4.4 ใช้ผ่านโค้ด (Python API)
 
 ```python
 from scanlation.config import ScanlationConfig
@@ -185,6 +229,25 @@ for r in results:
 ---
 
 ## 5) เจาะลึกแต่ละขั้นตอน (พร้อมตำแหน่งโค้ด)
+
+### [0] Download & Ingest — `scanlation/downloader/`
+
+- `base.py` → interface `ChapterSource` (บอกว่ารูปมีอะไรบ้าง) + `ImageRef`
+- `vortexscans.py::VortexScansSource` → ดึงหน้า chapter แล้วสกัด URL รูปด้วย regex
+  (จาก HTML จริง: รูปอยู่บน `storage.vortexscans.org/.../page-0001_...webp`)
+- `generic.py` → `GenericJsonSource` (อ่าน URL จากไฟล์ JSON/API) และ
+  `GenericHtmlSource` (จับ URL รูปด้วย regex ปรับได้) — **เพิ่มเว็บใหม่ได้โดยไม่เขียนโค้ด**
+- `converter.py::ImageConverter` → **บังคับแปลงเป็น WebP** ด้วย Pillow (จัดการ RGBA/P,
+  flatten พื้นขาว, ย่อขนาดได้) ควบคุม `quality`/`method`
+- `downloader.py::ChapterDownloader` → ดาวน์โหลดแบบ **หลายเธรด**, retry,
+  ตั้งชื่อ `page-XXXX.webp`, เขียน manifest
+
+**วิธีเพิ่มเว็บใหม่** (ตัวอย่าง): ตั้งใน config
+```python
+cfg.download.source = "generic-html"        # หรือ "generic-json"
+cfg.download.source_regex = r"https://cdn\.[^\"']+\.(webp|jpg|png)"
+```
+หรือเขียนคลาสใหม่ + `@register("source", "mysite")` แล้วตั้ง `cfg.download.source = "mysite"`
 
 ### [1] Detection & Masking — `scanlation/detection/`
 
@@ -235,6 +298,7 @@ for r in results:
 
 | ไฟล์เดิม | แทนด้วย |
 |----------|---------|
+| (ดาวน์โหลดรูปด้วยมือ / สคริปต์ ad-hoc) | `scanlation/downloader/` — `python -m scanlation.cli download <url>` (บังคับ WebP อัตโนมัติ) |
 | `extract.py`, `extract2.py`, `tblocks.py`, `tscan.py`, `ocr_test.py` | `scanlation/detection/` (OCR + SAM) — ลบสคริปต์ 5 ตัวรวมเป็น 1 สเตจ |
 | `data.py` (พิกัด + คำแปลมือ) | `scanlation/schemas.py` (โครงสร้างอัตโนมัติ) + `config/glossary.json` + `config/characters.json` |
 | `render.py` (inpaint 4 เหลี่ยม + วาดไทย) | `scanlation/inpainting/` + `scanlation/typesetting/` |

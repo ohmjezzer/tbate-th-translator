@@ -34,6 +34,9 @@ dependencies:
       # --- Thai tokenizer ---
       - pythainlp>=4.0
 
+      # --- ดาวน์โหลดรูปจากเว็บ ---
+      - requests>=2.31
+
       # --- OCR ---
       - easyocr>=1.7
       - pytesseract>=0.3.10

@@ -102,11 +102,41 @@ class TypesettingConfig:
 
 
 # ---------------------------------------------------------------------------
-# 6) รวมทุกอย่าง
+# 6) Download — ดึงรูปจากเว็บ → บังคับแปลง WebP → วางใน input_dir
+# ---------------------------------------------------------------------------
+@dataclass
+class DownloadConfig:
+    source: str = "vortexscans"          # "vortexscans" | "generic-json" | "generic-html"
+    out_dir: str = ""                    # "" = ใช้ paths.input_dir (โฟลเดอร์ orig)
+    prefix: str = "page"                 # ชื่อไฟล์: page-0001.webp
+    start_index: int = 1                 # เลขหน้าเริ่มต้น
+    webp_quality: int = 92               # คุณภาพ WebP (0-100)
+    webp_method: int = 6                 # ความพยายามบีบอัด WebP (0-6, สูง=ช้ากว่าแต่เล็กกว่า)
+    max_width: int = 0                   # ย่อความกว้างสูงสุดถ้า > 0 (0 = คงเดิม)
+    force_webp: bool = True              # บังคับให้ output เป็น WebP เสมอ (แปลงทุกรูปแบบ)
+    overwrite: bool = True               # เขียนทับไฟล์เดิมที่มีอยู่
+    limit: int = 0                        # ดาวน์โหลดแค่ N หน้าแรก (0 = ทั้งหมด; ใช้ทดลอง)
+    max_workers: int = 4                 # ดาวน์โหลดพร้อมกันกี่เธรด
+    retries: int = 3                     # จำนวนครั้งที่ลองใหม่เมื่อล้มเหลว
+    timeout: float = 60.0                # timeout ต่อการเชื่อมต่อ (วินาที)
+    chunk_size: int = 1 << 16            # ขนาดก้อนตอนสตรีมดาวน์โหลด (64 KiB)
+    user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    )
+    referer: str = ""                    # Referer header (บางเว็บต้องมี)
+    manifest_path: str = ""              # "" = .scanlation/download_manifest.json
+    image_urls_file: str = ""            # สำหรับ generic-json/generic-html (ไฟล์รายการ URL)
+    source_regex: str = ""               # regex ปรับเองสำหรับ generic-html ("" = ใช้ค่าเริ่มต้น)
+
+
+# ---------------------------------------------------------------------------
+# 7) รวมทุกอย่าง
 # ---------------------------------------------------------------------------
 @dataclass
 class ScanlationConfig:
     paths: PathConfig = field(default_factory=PathConfig)
+    download: DownloadConfig = field(default_factory=DownloadConfig)
     detection: DetectionConfig = field(default_factory=DetectionConfig)
     inpainting: InpaintingConfig = field(default_factory=InpaintingConfig)
     translation: TranslationConfig = field(default_factory=TranslationConfig)

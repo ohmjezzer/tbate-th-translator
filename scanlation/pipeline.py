@@ -29,6 +29,7 @@ from .config import ScanlationConfig, TypesettingConfig, TranslationConfig, Inpa
 from .detection import DetectionPipeline
 from .detection.ocr_detector import EasyOCRDetector
 from .detection.sam_segmenter import SAMSegmenter
+from .downloader import ChapterDownloader, DownloadReport
 from .inpainting import Inpainter, LamaInpainter, build_text_mask
 from .schemas import Page
 from .translation import LLMTranslator, Translator, load_context
@@ -58,14 +59,51 @@ class ScanlationPipeline:
         inpainter: Optional[Inpainter] = None,
         translator: Optional[Translator] = None,
         typesetter: Optional[Typesetter] = None,
+        downloader: Optional[ChapterDownloader] = None,
     ):
         self.cfg = config or ScanlationConfig()
 
-        # --- สร้างคอมโพเนนต์เริ่มต้นจาก config (ถ้าไม่ได้ฉีดเข้ามา) ---
-        self.detection = detection or self._default_detection()
-        self.inpainter = inpainter or self._default_inpainter()
-        self.translator = translator or self._default_translator()
-        self.typesetter = typesetter or Typesetter(self.cfg.typesetting)
+        # --- คอมโพเนนต์ที่ฉีดเข้ามา (ถ้าไม่ส่ง จะสร้างแบบ lazy ตอนเรียกใช้) ---
+        # การสร้างแบบ lazy สำคัญมาก: คำสั่ง "download" ไม่ควรถูกบังคับให้โหลด
+        # โมเดลหนัก (SAM/LaMa) หรือเรียก LLM เลย
+        self._detection = detection
+        self._inpainter = inpainter
+        self._translator = translator
+        self._typesetter = typesetter
+        self._downloader = downloader
+
+    # ------------------------------------------------------------------
+    # Lazy accessors: สร้างคอมโพเนนต์เมื่อถูกเรียกครั้งแรก แล้ว cache ไว้
+    # ------------------------------------------------------------------
+    @property
+    def downloader(self) -> ChapterDownloader:
+        if self._downloader is None:
+            self._downloader = ChapterDownloader(self.cfg.download)
+        return self._downloader
+
+    @property
+    def detection(self) -> DetectionPipeline:
+        if self._detection is None:
+            self._detection = self._default_detection()
+        return self._detection
+
+    @property
+    def inpainter(self) -> Inpainter:
+        if self._inpainter is None:
+            self._inpainter = self._default_inpainter()
+        return self._inpainter
+
+    @property
+    def translator(self) -> Translator:
+        if self._translator is None:
+            self._translator = self._default_translator()
+        return self._translator
+
+    @property
+    def typesetter(self) -> Typesetter:
+        if self._typesetter is None:
+            self._typesetter = Typesetter(self.cfg.typesetting)
+        return self._typesetter
 
     # ------------------------------------------------------------------
     # Factory: สร้างคอมโพเนนต์จาก config
@@ -96,6 +134,28 @@ class ScanlationPipeline:
 
     def _default_translator(self) -> Translator:
         return LLMTranslator(self.cfg.translation)
+
+    # ------------------------------------------------------------------
+    # สเตจ 0: Download & Ingest (ดึงรูปจากเว็บ → บังคับ WebP → input_dir)
+    # ------------------------------------------------------------------
+    def download(self, chapter_url: str, out_dir: Optional[str] = None) -> DownloadReport:
+        """
+        ดาวน์โหลดรูปของ chapter หนึ่งจากเว็บ แล้ววางเป็นไฟล์ WebP ใน input_dir
+        (พร้อมให้ process_page/run อ่านต่อได้ทันที)
+
+        out_dir : ถ้าระบุ จะเขียนทับ cfg.download.out_dir ชั่วคราว
+        """
+        if out_dir:
+            self.downloader.cfg.out_dir = out_dir
+        report = self.downloader.download_chapter(chapter_url)
+        log.info("ดาวน์โหลดเสร็จ: %s", report.summary())
+        return report
+
+    def download_and_run(self, chapter_url: str, pages: Optional[Sequence[int]] = None,
+                         do_translate: bool = True, out_dir: Optional[str] = None) -> List[ScanlationResult]:
+        """ทางลัด: ดาวน์โหลด chapter → แปลทันที (ใช้บ่อยที่สุด)"""
+        self.download(chapter_url, out_dir=out_dir)
+        return self.run(pages=pages, do_translate=do_translate)
 
     # ------------------------------------------------------------------
     # ประมวลผล 1 หน้า
