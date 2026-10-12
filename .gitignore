@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ภาพต้นฉบับ / ผลลัพธ์ขนาดใหญ่ (ไม่เก็บใน git)
+orig/
+out/
+dist/
+test/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
