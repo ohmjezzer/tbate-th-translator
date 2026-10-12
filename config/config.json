@@ -1,0 +1,55 @@
+{
+  "paths": {
+    "input_dir": "orig",
+    "output_dir": "out",
+    "work_dir": ".scanlation",
+    "fonts_dir": "fonts",
+    "config_dir": "config"
+  },
+  "detection": {
+    "ocr_engine": "easyocr",
+    "ocr_langs": ["en"],
+    "ocr_min_confidence": 0.4,
+    "merge_gap": 16,
+    "sam_model_type": "vit_h",
+    "sam_checkpoint": "weights/sam_vit_h_4b8939.pth",
+    "sam_device": "cuda",
+    "sam_expand": 6,
+    "sam_mask_fill_ratio": 0.45,
+    "sam_bubble_whiteness": 0.72,
+    "use_auto_mask": false
+  },
+  "inpainting": {
+    "method": "lama",
+    "device": "cuda",
+    "mask_dilate": 8,
+    "text_delta": 45,
+    "opencv_radius": 4,
+    "opencv_method": "telea",
+    "pad_to_multiple": 8
+  },
+  "translation": {
+    "backend": "anthropic",
+    "model": "claude-3-5-sonnet-latest",
+    "temperature": 0.3,
+    "max_tokens": 4096,
+    "target_lang": "Thai",
+    "glossary_path": "config/glossary.json",
+    "characters_path": "config/characters.json",
+    "cache_path": ".scanlation/translation_cache.json",
+    "max_retries": 3,
+    "timeout": 120.0
+  },
+  "typesetting": {
+    "regular_font": "fonts/Sarabun-Regular.ttf",
+    "bold_font": "fonts/Sarabun-Bold.ttf",
+    "sfx_font": "fonts/Sarabun-Bold.ttf",
+    "min_font_size": 10,
+    "max_font_size": 200,
+    "line_spacing": 1.28,
+    "padding_ratio": 0.14,
+    "sfx_stroke_ratio": 0.13,
+    "auto_contrast": true,
+    "fit_attempts": 2
+  }
+}

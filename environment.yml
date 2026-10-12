@@ -1,0 +1,49 @@
+# ===========================================================================
+# environment.yml — สภาพแวดล้อม Conda สำหรับระบบ Scanlation
+#
+#   conda env create -f environment.yml
+#   conda activate scanlation
+#
+# หมายเหตุ:
+#   - แนะนำ Python 3.11 (เสถียรกับ torch / easyocr / iopaint)
+#   - สำหรับ GPU ให้ติดตั้ง PyTorch ตามเวอร์ชัน CUDA ของเครื่อง แยกต่างหาก
+#     https://pytorch.org/get-started/locally/
+# ===========================================================================
+name: scanlation
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # --- ภาษาและเครื่องมือพื้นฐาน ---
+  - python=3.11
+  - pip
+  - git
+
+  # --- ประมวลผลภาพ / คณิตศาสตร์ ---
+  - numpy>=1.24
+  - pillow>=10.0            # ต้องมี libraqm สำหรับการจัดวางสระไทย
+  - opencv>=4.8             # ให้ cv2 ใช้ได้ (headless)
+  - scipy
+  - pyyaml
+
+  # --- OCR ระดับระบบ (สำหรับ TesseractDetector) ---
+  - tesseract>=5
+
+  - pip:
+      # --- Thai tokenizer ---
+      - pythainlp>=4.0
+
+      # --- OCR ---
+      - easyocr>=1.7
+      - pytesseract>=0.3.10
+
+      # --- LLM ---
+      - anthropic>=0.34
+      - openai>=1.40
+
+      # --- ตัวโมเดล ML (ถ้าติดตั้ง torch ผ่าน conda/pip แล้ว) ---
+      - segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
+      - ultralytics>=8.1
+      - simple-lama-inpainting>=0.1.2
+      - iopaint>=1.3

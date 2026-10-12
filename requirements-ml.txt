@@ -1,0 +1,23 @@
+# ===========================================================================
+# requirements-ml.txt — ตัวโมเดล Deep Learning (หนัก, ต้องมี torch)
+#   สำหรับ GPU NVIDIA: แนะนำติดตั้ง torch ให้ตรงกับ CUDA ก่อน เช่น
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   แล้วค่อย: pip install -r requirements-ml.txt
+# ===========================================================================
+
+# --- PyTorch (ฐานของทั้ง SAM และ LaMa) ---
+torch>=2.1
+torchvision>=0.16
+
+# --- Segment Anything Model (Meta) — Detection & Masking ---
+#   ต้องดาวน์โหลด checkpoint แยก: sam_vit_h_4b8939.pth (~2.4 GB)
+segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
+
+# --- FastSAM (ทางเลือก Segmentation ที่เบา/เร็ว รันบน CPU ได้) ---
+ultralytics>=8.1
+
+# --- LaMa Inpainting (แบบง่าย, ม้วนโมเดลมาให้ในแพ็กเกจ) ---
+simple-lama-inpainting>=0.1.2
+
+# --- IOPaint (ชื่อเดิม lama-cleaner) — รองรับหลายโมเดล inpainting ---
+iopaint>=1.3
