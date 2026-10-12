@@ -3,6 +3,46 @@
 คู่มือนี้พาจาก **เครื่องเปล่า → รัน pipeline ได้จริง** ครบทุกขั้นตอน
 ครอบคลุม Windows / macOS / Linux และทั้งแบบ **มี GPU** กับ **ใช้ CPU**
 
+---
+
+## 🚀 เริ่มต้นเร็ว: ใช้ผู้ให้บริการ AI "ฟรี" (ไม่ต้องมีโมเดล/บัตรเครดิต)
+
+ยังไม่มีโมเดล AI เก่ง ๆ ใช้? เริ่มจากผู้ให้บริการที่มี **ระดับฟรี** ก่อนได้เลย
+(ค่าดีฟอลต์ของโปรเจกต์ตั้งเป็น Gemini ฟรีไว้แล้ว) — 3 คำสั่ง:
+
+```bash
+cp .env.example .env                          # Windows: copy .env.example .env
+#   เปิด .env ใส่คีย์ฟรีที่บรรทัด GEMINI_API_KEY=...
+#   (ขอคีย์ฟรีได้ที่ https://aistudio.google.com/app/apikey)
+
+python scripts/check_env.py                    # ตรวจว่าพร้อม
+python -m scanlation.cli run 1                 # ลองแปลหน้าแรก
+```
+
+หรือให้ระบบสร้าง `.env` ให้อัตโนมัติ:
+
+```bash
+python -m scanlation.cli setup --list          # ดูผู้ให้บริการทั้งหมด (ฟรีขึ้นก่อน)
+python -m scanlation.cli setup --free          # ใช้ Gemini (แนะนำ)
+python -m scanlation.cli setup --provider groq # เปลี่ยนเป็น Groq
+```
+
+| ผู้ให้บริการฟรี | ขอคีย์ | จุดเด่น |
+|---|---|---|
+| **gemini** (ค่าดีฟอลต์) | https://aistudio.google.com/app/apikey | คุณภาพไทยดี, โควต้าฟรีรายวัน |
+| **groq** | https://console.groq.com/keys | เร็วมาก เหมาะงานจำนวนมาก |
+| **openrouter** | https://openrouter.ai/keys | โมเดลฟรีลงท้าย `:free` หลายตัว |
+| **cerebras** | https://cloud.cerebras.ai/ | ฟรี + เร็ว |
+| **mistral** | https://console.mistral.ai/api-keys/ | มีระดับฟรี |
+| **together** | https://api.together.xyz/settings/api-keys | โมเดล `-Free` |
+| **github** | https://github.com/settings/tokens | ใช้ GitHub PAT |
+| **ollama** | — (รันในเครื่อง) | ฟรี 100% ไม่ต้องใช้คีย์ |
+
+> 💡 เมื่อพร้อมใช้โมเดลระดับสูง ค่อยเปลี่ยนเป็น `claude-3-5-sonnet` / `gpt-4o`
+> ได้โดยแก้แค่ `SCANLATION_TRANSLATION_BACKEND` + ใส่คีย์ (โค้ดไม่ต้องแก้เลย)
+
+---
+
 > 💡 ก่อนเริ่ม: คุณจะรันสคริปต์ตรวจสอบได้ทุกเมื่อด้วย
 > ```bash
 > python scripts/check_env.py
@@ -170,17 +210,24 @@ environment variable ในเชลล์   ← สูงสุด (ใช้�
 ค่าดีฟอลต์ในโค้ด               ← ต่ำสุด
 ```
 
-### ตัวอย่าง `.env` ขั้นต่ำ (แค่ใส่ AI key + เปิด GPU)
+### ตัวอย่าง `.env` ขั้นต่ำ (เริ่มด้วยผู้ให้บริการฟรี)
 ```dotenv
-# --- AI (สเตจแปล) ---
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxx
-
-# --- เลือกผู้ให้บริการ/โมเดล ---
-SCANLATION_TRANSLATION_BACKEND=anthropic
-SCANLATION_TRANSLATION_MODEL=claude-3-5-sonnet-latest
+# --- AI ฟรี (สเตจแปล) ---
+GEMINI_API_KEY=ใส่คีย์ฟรีของคุณ
+SCANLATION_TRANSLATION_BACKEND=gemini
+SCANLATION_TRANSLATION_MODEL=gemini-2.0-flash
 
 # --- อุปกรณ์ (cpu | cuda | mps) ---
 SCANLATION_PROFILE=gpu
+```
+
+หรือสร้างให้อัตโนมัติ: `python -m scanlation.cli setup --free`
+
+### สลับไปใช้โมเดลระดับสูง (เมื่อพร้อม)
+```dotenv
+SCANLATION_TRANSLATION_BACKEND=anthropic
+SCANLATION_TRANSLATION_MODEL=claude-3-5-sonnet-latest
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
 ```
 
 ### ตัวช่วยสุดสะดวก: `SCANLATION_PROFILE`
@@ -194,24 +241,29 @@ SCANLATION_PROFILE=gpu     # SAM+Inpaint = cuda
 
 ### 🔑 API key ของผู้ให้บริการ AI ทุกตัว (ใส่เฉพาะเจ้าที่ใช้)
 
-| ตัวแปร | ผู้ให้บริการ | ตัวอย่างโมเดล (ตั้งใน `SCANLATION_TRANSLATION_MODEL`) |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic (Claude) | `claude-3-5-sonnet-latest`, `claude-3-7-sonnet-latest` |
-| `OPENAI_API_KEY` | OpenAI (GPT) | `gpt-4o`, `gpt-4.1` |
-| `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Azure OpenAI | `gpt-4o` |
-| `GEMINI_API_KEY` (หรือ `GOOGLE_API_KEY`) | Google Gemini | `gemini-2.5-pro` |
-| `DEEPSEEK_API_KEY` | DeepSeek | `deepseek-chat` |
-| `GROQ_API_KEY` | Groq | `llama-3.3-70b-versatile` |
-| `MISTRAL_API_KEY` | Mistral | `mistral-large-latest` |
-| `OPENROUTER_API_KEY` | OpenRouter (รวมหลายเจ้า) | เช่น `anthropic/claude-3.5-sonnet` |
-| `TOGETHER_API_KEY` | Together AI | — |
-| `XAI_API_KEY` | xAI (Grok) | `grok-2-latest` |
-| `PERPLEXITY_API_KEY` | Perplexity | — |
-| `COHERE_API_KEY` | Cohere | — |
-| `FIREWORKS_API_KEY` | Fireworks AI | — |
-| `CEREBRAS_API_KEY` | Cerebras | — |
-| `HF_TOKEN` | Hugging Face (โหลดโมเดล) | — |
-| `REPLICATE_API_TOKEN` | Replicate | — |
+> 🌟 **ผู้ให้บริการฟรี** อยู่บนสุด — เริ่มจากตัวใดตัวหนึ่งได้เลย
+> สร้าง `.env` อัตโนมัติ: `python -m scanlation.cli setup --provider <ชื่อ>`
+
+| ตัวแปร | ผู้ให้บริการ | ฟรี? | ตัวอย่างโมเดล |
+|---|---|---|---|
+| `GEMINI_API_KEY` | Google Gemini | ✅ | `gemini-2.0-flash`, `gemini-2.5-pro` |
+| `GROQ_API_KEY` | Groq | ✅ | `llama-3.3-70b-versatile` |
+| `OPENROUTER_API_KEY` | OpenRouter | ✅ | `meta-llama/llama-3.3-70b-instruct:free` |
+| `CEREBRAS_API_KEY` | Cerebras | ✅ | `llama-3.3-70b` |
+| `MISTRAL_API_KEY` | Mistral | ✅ | `mistral-small-latest` |
+| `TOGETHER_API_KEY` | Together AI | ✅ | `...-Instruct-Turbo-Free` |
+| `GITHUB_TOKEN` | GitHub Models | ✅ | `gpt-4o-mini` |
+| (ไม่ต้องใช้คีย์) | Ollama (ในเครื่อง) | ✅ | `llama3.1` |
+| `ANTHROPIC_API_KEY` | Anthropic (Claude) | 💰 | `claude-3-5-sonnet-latest` |
+| `OPENAI_API_KEY` | OpenAI (GPT) | 💰 | `gpt-4o`, `gpt-4.1` |
+| `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Azure OpenAI | 💰 | `gpt-4o` |
+| `DEEPSEEK_API_KEY` | DeepSeek | 💰 | `deepseek-chat` |
+| `XAI_API_KEY` | xAI (Grok) | 💰 | `grok-2-latest` |
+| `PERPLEXITY_API_KEY` | Perplexity | 💰 | `sonar` |
+| `COHERE_API_KEY` | Cohere | 💰 | `command-r-plus` |
+| `FIREWORKS_API_KEY` | Fireworks AI | 💰 | — |
+| `HF_TOKEN` | Hugging Face (โหลดโมเดล) | ✅ | — |
+| `REPLICATE_API_TOKEN` | Replicate | 💰 | — |
 
 **วิธีเลือกผู้ให้บริการ:** ตั้ง `SCANLATION_TRANSLATION_BACKEND` ให้ตรงกับเจ้าของ key
 เช่น
@@ -235,7 +287,7 @@ python -c "from scanlation.env import env_report, ENV_MAP; print(len(ENV_MAP),'�
 
 **🐧🍎 macOS / Linux — ชั่วคราว:**
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-xxxxxxxx"
+export GEMINI_API_KEY="คีย์ฟรีของคุณ"
 export SCANLATION_PROFILE=gpu
 ```
 **ถาวร** — ใส่บรรทัด `export ...` ใน `~/.bashrc` (หรือ `~/.zshrc`) แล้ว `source ~/.bashrc`

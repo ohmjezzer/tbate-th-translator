@@ -20,12 +20,14 @@ from __future__ import annotations
 
 __version__ = "2.0.0"
 
+from . import providers
 from .config import ScanlationConfig
 from .env import apply_env, load_dotenv, resolve_api_key
 from .schemas import BBox, BlockKind, Bubble, Page, TextBlock
 
 __all__ = [
     "ScanlationConfig",
+    "providers",
     "apply_env",
     "load_dotenv",
     "resolve_api_key",

@@ -235,19 +235,43 @@ def main() -> int:
              "python scripts/download_weights.py --model vit_b")
 
     # ------------------------------------------------- 5) API key
-    section("5) API key ของ LLM (สเตจแปล)")
-    a = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    o = bool(os.environ.get("OPENAI_API_KEY"))
-    if a:
-        ok("ANTHROPIC_API_KEY ตั้งแล้ว (Claude)")
+    section("5) API key ของผู้ให้บริการ AI (สเตจแปล)")
+    from scanlation.config import ScanlationConfig
+    from scanlation.env import apply_env
+    from scanlation.providers import get as get_provider, list_free, api_keys_for
+
+    cfg = apply_env(ScanlationConfig())
+    backend = cfg.translation.backend
+    prov = get_provider(backend)
+    print(f"  backend ปัจจุบัน: {backend}  (โมเดล: {cfg.translation.model})")
+    if prov:
+        tag = "ฟรี" if prov.free else "เสียเงิน"
+        print(f"  ผู้ให้บริการ: {prov.display}  [{tag}]")
+        if prov.signup_url:
+            print(f"      ขอคีย์ที่: {prov.signup_url}")
+
+    keys = api_keys_for(backend)
+    have = [k for k in keys if os.environ.get(k)]
+    if have:
+        ok(f"พบคีย์ของ '{backend}': " + ", ".join(have))
+    elif keys:
+        fail(f"ยังไม่พบคีย์ของ '{backend}' ({', '.join(keys)})",
+             f"ตั้งใน .env หรือรัน: python -m scanlation.cli setup --provider {backend}")
     else:
-        warn("ยังไม่ตั้ง ANTHROPIC_API_KEY", "ดูวิธีตั้งค่าใน SETUP.md หัวข้อ 'ตั้งค่า API key'")
-    if o:
-        ok("OPENAI_API_KEY ตั้งแล้ว (GPT)")
-    else:
-        warn("ยังไม่ตั้ง OPENAI_API_KEY")
-    if not (a or o):
-        warn("ไม่มี API key ใด ๆ — สเตจแปลจะใช้ไม่ได้ (แต่ demo/ดาวน์โหลดยังใช้ได้)")
+        ok("ผู้ให้บริการนี้ไม่ต้องใช้คีย์ (เช่น ollama)")
+
+    # เตือนถ้ามีคีย์ของเจ้าอื่น (อาจตั้ง backend ไม่ตรงกับคีย์ที่มี)
+    from scanlation.providers import CATALOG
+    others = [p.name for p in CATALOG.values()
+              if p.name != backend and any(os.environ.get(k) for k in p.env_keys)]
+    if others and not have:
+        warn("พบคีย์ของผู้ให้บริการอื่น: " + ", ".join(others),
+             "ตั้ง SCANLATION_TRANSLATION_BACKEND ให้ตรงกับคีย์ หรือเปลี่ยนคีย์")
+
+    free_names = ", ".join(p.name for p in list_free())
+    if keys and not have:
+        warn(f"ผู้ให้บริการฟรีที่ใช้ได้: {free_names}",
+             "รัน: python -m scanlation.cli setup --list เพื่อดูวิธีขอคีย์")
 
     # ------------------------------------------------- สรุปผล
     print(f"\n{B}════ สรุป ════{X}")

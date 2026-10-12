@@ -115,27 +115,34 @@ requirements.txt / requirements-ml.txt / environment.yml
 > 📖 **คู่มือติดตั้งแบบละเอียดทีละขั้น (Windows/macOS/Linux + GPU/CPU) อยู่ใน [`SETUP.md`](SETUP.md)**
 > และตรวจว่าติดตั้งครบไหมได้ด้วย `python scripts/check_env.py`
 
-### ⚙️ ตั้งค่าทุกอย่างผ่าน `.env` (แนะนำ)
+### ⚙️ ตั้งค่าทุกอย่างผ่าน `.env` — เริ่มจาก AI "ฟรี" ได้ทันที
 
-โปรเจกต์มี **`.env.example`** ที่รวมค่าตั้งได้ทุกตัว (paths / download / detection /
-inpainting / translation / typesetting) **รวม API key ของผู้ให้บริการ AI ทุกเจ้า**:
+โปรเจกต์ตั้งค่าดีฟอลต์เป็น **ผู้ให้บริการ AI ที่มีระดับฟรี** (Gemini) และมี
+**`.env.example`** ที่รวมค่าตั้งได้ทุกตัว (paths / download / detection /
+inpainting / translation / typesetting) **รวม API key ของผู้ให้บริการ AI ทุกเจ้า**
 
 ```bash
-cp .env.example .env      # แล้วเปิดแก้ค่าที่ต้องการ
+# วิธีที่ 1: คัดลอกแล้วใส่คีย์ (เริ่มจาก Gemini ฟรี)
+cp .env.example .env      # แล้วใส่ GEMINI_API_KEY=... (ขอฟรี: https://aistudio.google.com/app/apikey)
+
+# วิธีที่ 2: ให้ระบบสร้าง .env ให้
+python -m scanlation.cli setup --free            # ใช้ Gemini (แนะนำ)
+python -m scanlation.cli setup --provider groq   # หรือเลือกเจ้า อื่น
+python -m scanlation.cli setup --list            # ดูผู้ให้บริการทั้งหมด
 ```
 
+**ผู้ให้บริการฟรีที่รองรับ** (ไม่ต้องใช้บัตรเครดิต): `gemini`, `groq`, `openrouter`,
+`cerebras`, `mistral`, `together`, `github`, `ollama` (รันในเครื่อง)
+**ระดับเสียเงิน** (คุณภาพสูงสุด): `anthropic`, `openai`, `deepseek`, `xai`, `perplexity`, `cohere`, `azure`, `fireworks`
+
+สลับผู้ให้บริการทำได้แค่แก้ 2 บรรทัดใน `.env` (โค้ดไม่ต้องแตะ):
+```dotenv
+SCANLATION_TRANSLATION_BACKEND=groq
+SCANLATION_TRANSLATION_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=gsk_...
+```
 ค่าทุกตัวโหลดจาก `.env` อัตโนมัติ โดยมีลำดับความสำคัญ:
 `env ในเชลล์ > ไฟล์ .env > config/config.json > ค่าดีฟอลต์`
-
-ตัวอย่าง `.env` ขั้นต่ำ:
-```dotenv
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
-SCANLATION_TRANSLATION_BACKEND=anthropic
-SCANLATION_PROFILE=gpu            # ทางลัดตั้ง CPU/GPU ให้ทั้งระบบ
-```
-> รองรับผู้ให้บริการ: Anthropic, OpenAI, Azure, Gemini, DeepSeek, Groq, Mistral,
-> OpenRouter, Together, xAI, Perplexity, Cohere, Fireworks, Cerebras, Hugging Face, Replicate
-> — ตั้ง `SCANLATION_TRANSLATION_BACKEND` + key ให้ตรงคู่กัน
 
 ### ทางเลือก A: venv (แนะนำสำหรับเครื่องเดียว)
 

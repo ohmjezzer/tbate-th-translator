@@ -48,8 +48,8 @@
     "pad_to_multiple": 8
   },
   "translation": {
-    "backend": "anthropic",
-    "model": "claude-3-5-sonnet-latest",
+    "backend": "gemini",
+    "model": "gemini-2.0-flash",
     "temperature": 0.3,
     "max_tokens": 4096,
     "target_lang": "Thai",

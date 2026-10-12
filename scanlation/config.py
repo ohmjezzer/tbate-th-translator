@@ -71,12 +71,14 @@ class InpaintingConfig:
 # ---------------------------------------------------------------------------
 @dataclass
 class TranslationConfig:
-    backend: str = "anthropic"           # "anthropic" | "openai"
-    model: str = "claude-3-5-sonnet-latest"  # แนะนำ "gpt-4o" สำหรับฝั่ง OpenAI
+    # ค่าดีฟอลต์ตั้งไว้เป็น "ผู้ให้บริการฟรี" เพื่อให้เริ่มใช้งานได้ทันทีโดยไม่ต้องมี
+    # โมเดล/บัตรเครดิตของตัวเอง (เปลี่ยนเป็น claude/gpt-4o ได้เมื่อพร้อม)
+    backend: str = "gemini"                     # ผู้ให้บริการฟรี: gemini|groq|openrouter|cerebras|mistral|together|github|ollama
+    model: str = "gemini-2.0-flash"             # โมเดลฟรีที่แนะนำ (ดู: python -m scanlation.cli setup --list)
     temperature: float = 0.3
     max_tokens: int = 4096
     target_lang: str = "Thai"
-    base_url: str = ""                   # endpoint ทางเลือก (OpenRouter/Groq/DeepSeek/self-host)
+    base_url: str = ""                          # endpoint ทางเลือก (ปกติไม่ต้องตั้ง — ระบบรู้จักผู้ให้บริการให้แล้ว)
     glossary_path: str = "config/glossary.json"
     characters_path: str = "config/characters.json"
     cache_path: str = ".scanlation/translation_cache.json"
