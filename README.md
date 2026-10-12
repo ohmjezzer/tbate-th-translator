@@ -92,11 +92,14 @@ scanlation/
 ├── typesetting/          # [4] จัดวางข้อความไทย
 │   ├── base.py           #   TextStyle / TextLayout
 │   ├── thai_wrapper.py   #   ThaiTextWrapper (ตัดบรรทัด ไม่ตัดกลางคำ)
-│   ├── fitter.py         #   FontFitter (binary-search ขนาดฟอนต์)
+│   ├── fitter.py         #   FontFitter (binary-search ขนาดฟอนต์ + โหมด fix ขนาดเอง)
 │   ├── renderer.py       #   PillowRenderer (auto-contrast + clip ใน mask)
-│   └── typesetter.py     #   Typesetter (orchestrator ของสเตจ)
+│   └── typesetter.py     #   Typesetter (orchestrator + อ่าน override จาก meta)
+├── web/                  # ★ หน้า Preview/แก้ไข (Flask + static frontend)
+│   ├── app.py            #   API: project / page / save / render / media
+│   └── static/           #   index.html · app.js · style.css (vanilla JS)
 ├── pipeline.py           # ★ ScanlationPipeline — เชื่อมทุกสเตจ
-└── cli.py                # command-line interface
+└── cli.py                # command-line interface (run/download/preview/...)
 
 pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 5 ขั้นตอน (รันได้จริง)
 scripts/download_weights.py   # ดาวน์โหลด checkpoint ของ SAM
@@ -254,6 +257,32 @@ results = pipeline.run(pages=[4, 23, 26], do_translate=True)
 for r in results:
     print(r.page_index, "->", r.output_path)
 ```
+
+### 4.5 หน้า Preview / แก้ไขผลการแปล (frontend)
+
+ตรวจผลการแปลด้วยตา แล้วแก้ได้ทันทีผ่านหน้าเว็บ (รันในเครื่อง)
+
+```bash
+pip install -r requirements-web.txt      # ติดตั้ง Flask (เบา ไม่ต้องมี GPU)
+python -m scanlation.cli preview          # เปิด http://127.0.0.1:8000
+python -m scanlation.cli preview --port 8080
+```
+
+สิ่งที่ทำได้ในหน้า preview:
+- สลับดู **ต้นฉบับ (orig) / หลังลบข้อความ (cleaned) / ผลลัพธ์ (out)**
+- **แก้ข้อความคำแปล** ได้ทันทีในช่องแก้ไข
+- **ลากย้ายข้อความ** ให้ตรงกรอบบอลลูน (เก็บเป็น `offset`)
+- **ลากมุมขวาล่างเพื่อย่อ/ขยายกรอบ** ข้อความ (เก็บเป็น `bbox`)
+- **ปรับขนาดฟอนต์** (สไลเดอร์), **การจัดชิด** (กลาง/ซ้าย/ขวา), **สีตัวอักษร**
+- ปุ่ม **"บันทึก & เรนเดอร์ใหม่"** → ให้ Typesetter วาดใหม่ตามที่แก้ แล้วดูผลทันที
+- ขยับด้วยคีย์ลูกศร (Shift = ทีละ 10px), ปุ่ม ↺ รีเซ็ตค่าที่แก้ของบอลลูนนั้น
+
+ค่าที่แก้จะถูกเก็บใน `meta` ของแต่ละบอลลูนใน `.scanlation/*_translation.json`
+(`font_size`, `offset`, `bbox`, `align`, `color`) และ `Typesetter` จะอ่านค่าเหล่านี้
+ตอนเรนเดอร์ — จึงแก้ซ้ำ/เรนเดอร์ใหม่ได้ไม่จำกัดโดยไม่ต้องแปลใหม่
+
+> 💡 ต้องมีข้อมูลหน้าใน `.scanlation/` ก่อน (รัน `scanlation.cli run <หน้า>` แล้ว)
+> ระบบใช้ภาพที่ inpaint แล้ว (`2_cleaned_pXXXX.png`) เป็นฐานในการเรนเดอร์ใหม่ (เร็ว ไม่ต้องรัน SAM/LaMa ซ้ำ)
 
 ---
 

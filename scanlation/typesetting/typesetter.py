@@ -65,6 +65,41 @@ class Typesetter:
             clip_to_mask=bool(bubble.mask is not None),
         )
 
+    # ---- อ่านค่าที่ผู้ใช้แก้จากหน้า preview (เก็บใน Bubble.meta) -----------
+    @staticmethod
+    def _override_style(style: TextStyle, bubble: Bubble) -> TextStyle:
+        """
+        ปรับ TextStyle ตามค่าที่ผู้ใช้ตั้งไว้ในหน้า preview
+        (เก็บใน bubble.meta) ได้แก่ align / color / stroke_width / line_spacing
+        """
+        meta = bubble.meta or {}
+        align = meta.get("align")
+        if align in ("left", "center", "right"):
+            style.align = align
+        color = meta.get("color")
+        if isinstance(color, (list, tuple)) and len(color) == 3:
+            style.color = (int(color[0]), int(color[1]), int(color[2]))
+        if "stroke_width" in meta:
+            style.stroke_width = max(0, int(meta["stroke_width"]))
+        if "line_spacing" in meta:
+            try:
+                style.line_spacing = float(meta["line_spacing"])
+            except (TypeError, ValueError):
+                pass
+        return style
+
+    @staticmethod
+    def _resolve_box(bubble: Bubble, w: int, h: int) -> "BBox":
+        """ใช้ bbox ที่ผู้ใช้แก้ไว้ (meta['bbox']) ถ้ามี ไม่งั้นใช้ bbox เดิม"""
+        from ..schemas import BBox
+
+        meta = bubble.meta or {}
+        bbox = bubble.bbox
+        ov = meta.get("bbox")
+        if isinstance(ov, (list, tuple)) and len(ov) == 4:
+            bbox = BBox.from_list([float(v) for v in ov])
+        return bbox.clip(w, h)
+
     # ---- เรนเดอร์บอลลูนเดียว --------------------------------------------
     def _render_bubble(self, base: Image.Image, image: np.ndarray, bubble: Bubble) -> None:
         text = bubble.translation.strip()
@@ -72,40 +107,55 @@ class Typesetter:
             return
 
         w, h = base.size
-        box = bubble.bbox.clip(w, h)
+        box = self._resolve_box(bubble, w, h)
         x0, y0, x1, y1 = box.to_int()
         bw, bh = x1 - x0, y1 - y0
         if bw <= 2 or bh <= 2:
             return
 
-        style = self._style_for(bubble)
+        style = self._override_style(self._style_for(bubble), bubble)
+        meta = bubble.meta or {}
 
         # ระยะขอบภายในบอลลูน (ห้ามข้อความชนขอบ)
         pad = max(4, int(style.padding_ratio * min(bw, bh)))
         ux0, uy0, ux1, uy1 = x0 + pad, y0 + pad, x1 - pad, y1 - pad
         uw, uh = max(6, ux1 - ux0), max(6, uy1 - uy0)
 
-        # fit ขนาดฟอนต์ให้พอดีกล่องที่หักขอบแล้ว
-        layout = self.fitter.fit(text, uw, uh, style.font_path,
-                                 min_size=style.min_size, max_size=style.max_size,
-                                 line_spacing=style.line_spacing)
+        # fit ขนาดฟอนต์: ถ้าผู้ใช้กำหนด font_size มา ใช้ค่านั้น (ไม่ auto-fit)
+        forced_size = meta.get("font_size")
+        if forced_size:
+            layout = self.fitter.fixed(text, int(forced_size), uw, style.font_path,
+                                       line_spacing=style.line_spacing)
+        else:
+            layout = self.fitter.fit(text, uw, uh, style.font_path,
+                                     min_size=style.min_size, max_size=style.max_size,
+                                     line_spacing=style.line_spacing)
 
-        # SFX: คำนวณความหนาเส้นขอบจากขนาดฟอนต์ที่ fit ได้
+        # SFX: คำนวณความหนาเส้นขอบจากขนาดฟอนต์ที่ fit ได้ (ถ้าผู้ใช้ไม่กำหนดเอง)
         if style.stroke_width < 0:
             style.stroke_width = max(2, int(layout.font_size * self.cfg.sfx_stroke_ratio))
+
+        # ออฟเซ็ต (ย้ายข้อความให้ตรงกรอบ) จาก meta['offset'] = [dx, dy]
+        offset = meta.get("offset")
+        dx = dy = 0.0
+        if isinstance(offset, (list, tuple)) and len(offset) == 2:
+            dx, dy = float(offset[0]), float(offset[1])
+
+        draw_box = (x0 + int(dx), y0 + int(dy), x1 + int(dx), y1 + int(dy))
 
         bg_lum = self.renderer.background_luminance(
             image, (x0, y0, x1, y1), bubble.mask
         )
 
-        if style.clip_to_mask and bubble.mask is not None:
-            # วาดลง layer โปร่งใส แล้ว clip ด้วย mask ของบอลลูน
+        # ถ้ามีการย้ายตำแหน่ง (offset) ให้วาดแบบไม่ clip (ผู้ใช้จัดตำแหน่งเองอยู่แล้ว)
+        use_clip = style.clip_to_mask and bubble.mask is not None and dx == 0 and dy == 0
+        if use_clip:
             layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-            self.renderer.draw_layout(layer, layout, style, (x0, y0, x1, y1), bg_lum)
+            self.renderer.draw_layout(layer, layout, style, draw_box, bg_lum)
             out = self.renderer.composite_clipped(base, layer, bubble.mask, feather=1)
             base.paste(out, (0, 0))
         else:
-            self.renderer.draw_layout(base, layout, style, (x0, y0, x1, y1), bg_lum)
+            self.renderer.draw_layout(base, layout, style, draw_box, bg_lum)
 
     # ---- API หลัก -------------------------------------------------------
     def render(self, image: np.ndarray, page: Page) -> np.ndarray:
