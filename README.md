@@ -1,115 +1,277 @@
-# TBATE Thai Translator (ตอนที่ 255)
+# Scanlation Engine v2 — Manga Thai Translator (Professional Grade)
 
-ชุดสคริปต์สำหรับ **ดึงรูปการ์ตูนจากเว็บ → อ่านข้อความอังกฤษในภาพ (OCR) → แปลเป็นไทย → เขียนข้อความไทยทับลงบนภาพ** โดยคงฟองคำพูด/กล่องบรรยาย/เสียงเอฟเฟกต์ไว้ในตำแหน่งเดิม
+ระบบ **สแกนเลชัน/แปลมังงะอัตโนมัติ** เวอร์ชันอัปเกรดจากโปรเจกต์
+[`tbate-th-translator`](https://github.com/ohmjezzer/tbate-th-translator) เดิม
+(EasyOCR/Tesseract + OpenCV) ให้เป็น **สถาปัตยกรรมแบบโมดูลที่ขยายผลได้** พร้อม
+โมเดลทันสมัย 4 ขั้นตอน:
 
-> ตัวอย่างที่ใช้พัฒนา: *The Beginning After the End* ตอนที่ 255 จาก vortexscans.org (41 หน้า)
+| ขั้น | งาน | เทคโนโลยีใหม่ | เทียบกับของเดิม |
+|-----|------|----------------|------------------|
+| **1. Detection & Masking** | หาข้อความ + ตัดขอบเขตบอลลูน | **SAM (Segment Anything Model, Meta)** / FastSAM | เดิมใช้กรอบสี่เหลี่ยมแข็ง ๆ |
+| **2. Inpainting** | ลบข้อความต้นฉบับ | **LaMa** (Large-Mask Inpainting) / IOPaint | เดิมใช้ `cv2.inpaint` |
+| **3. Translation** | แปลเป็นไทย | **Claude 3.5 Sonnet / GPT-4o** + Character Context | เดิมกรอกคำแปลมือใน `data.py` |
+| **4. Typesetting** | จัดวางข้อความไทย | **Pillow** + Sarabun + Thai word wrap | เดิมมีแล้ว แต่ปรับให้ clip ในบอลลูน |
 
----
-
-## ภาพรวมกระบวนการ (Pipeline)
-
-```
-vortexscans.org
-      │  (1) ดึงรายการรูป + ดาวน์โหลด
-      ▼
-  orig/*.webp  ──(2) OCR (Tesseract)──►  blocks2.json (พิกัด + ข้อความ)
-      │                                        │
-      │                                        ▼
-      │                            (3) ตรวจ/แก้พิกัด + แปล (AI Vision + คน)
-      │                                        │
-      │                                        ▼
-      │                                     data.py  (คำแปล + พิกัด)
-      ▼                                        │
-  (4) render.py  ◄──────────────────────────────┘
-      │   ลบข้อความเดิม (inpaint) + วาดข้อความไทยทับ
-      ▼
-  out/*.png ──(5) leftover.py ตรวจ English ตกค้าง──►  dist/*.jpg + .zip
-```
+> เป้าหมาย: ผลลัพธ์ที่ "เนียนตา" เหมือนทีมสแกนเลชันมืออาชีพทำเอง ไม่ใช่แค่ OCR แล้ววางทับ
 
 ---
 
-## โครงสร้างไฟล์
+## 1) ทำไมต้องอัปเกรด? (สิ่งที่เปลี่ยนไป)
 
-| ไฟล์ | หน้าที่ |
-|---|---|
-| `ocr_test.py` | ทดสอบ OCR หน้าเดียว ดูพิกัดคำ + confidence |
-| `tscan.py` | สแกนทุกหน้า หาว่าหน้าไหนมีข้อความ |
-| `tblocks.py` | รวมคำ OCR ให้เป็นบล็อก + กรอบข้อความ |
-| `extract.py` | OCR ทั้งเล่ม (psm 3) เวอร์ชันแรก → `blocks.json` |
-| `extract2.py` | OCR รวม psm 3 + 11, กรอง noise → `blocks2.json` |
-| **`data.py`** | ฐานข้อมูลคำแปลทั้งหมด (พิกัด + คำแปลไทย + ประเภท) |
-| **`render.py`** | เครื่องยนต์วาดข้อความไทยทับภาพ |
-| `leftover.py` | QA หา English ที่ตกค้างในผลลัพธ์ |
-| `chk25.py` | ตรวจสอบหน้าเดียว (ตัวอย่างหน้า 25) |
+**ของเดิม (สคริปต์แบนราบ)**
+- `extract2.py` อ่านข้อความด้วย Tesseract → ได้กรอบสี่เหลี่ยม
+- `data.py` เก็บพิกัด + คำแปล (แก้มือทีละหน้า)
+- `render.py` ใช้ `cv2.inpaint` บนกรอบสี่เหลี่ยม แล้ววาดข้อความทับ
+- ปัญหา: mask เป็นสี่เหลี่ยม → ลบเละ, แปลไม่สม่ำเสมอ, ขยายยาก
 
-โครงสร้างข้อมูลใน `data.py`:
+**เวอร์ชันใหม่ (แพ็กเกจ `scanlation/`)**
+- **SAM** ให้ mask ที่แนบตามรูปทรงบอลลูนจริง (วงรี ขอบหยัก หางบอลลูน) → ลบสะอาด
+- **LaMa** เติมพื้นหลังให้เนียนต่อเนื่อง (ไม่เหลือรอย)
+- **LLM + Character Context** แปลทั้งหน้าโดยรู้ว่าใครพูดกับใคร → สรรพนาม/น้ำเสียงคงเส้นคงวา
+- **Typesetting** ที่ clip ข้อความให้อยู่ใน mask ของบอลลูนอัตโนมัติ
+- **สถาปัตยกรรมแบบ interface + dependency injection** → สลับโมเดลได้จาก config โดยไม่แตะ pipeline
+
+---
+
+## 2) สถาปัตยกรรม (ภาพรวม)
+
+```
+                       ScanlationPipeline (scanlation/pipeline.py)
+                       ───────────────────────────────────────────
+  ภาพต้นฉบับ ──► [1] Detection & Masking ──► [2] Inpainting ──► [4] Typesetting ──► ภาพผลลัพธ์
+   (orig/*.webp)   OCR + SAM → Bubble[]      LaMa (mask→clean)   Pillow (วาดไทย)
+                              │                                        ▲
+                              └────────────► [3] Translation ─────────┘
+                                             Claude/GPT-4o
+                                             → Bubble.translation
+```
+
+**ลำดับการทำงานจริงใน `process_page()`** (หมายเหตุ: แปลก่อน inpaint เพราะต้องอ่านข้อความต้นฉบับ)
+
+```
+image ─► (1) detect_page → Page(bubbles + masks + kind)
+      ─► (3) translate_page → เติมคำแปลในแต่ละ bubble
+      ─► (2) build_text_mask + inpaint → ภาพที่ลบข้อความเดิม
+      ─► (4) typesetter.render → ภาพสุดท้าย
+      ─► บันทึก out/page-XXXX.png + intermediate .scanlation/*.json
+```
+
+### โครงสร้างไฟล์
+
+```
+scanlation/
+├── schemas.py            # Data model กลาง: BBox / TextBlock / Bubble / Page
+├── config.py             # ค่า config ทั้งหมด (dataclass) + โหลด JSON/YAML + API key
+├── utils/
+│   ├── image_io.py       # อ่าน/เขียนภาพ (มาตรฐานเดียวทั้งโปรเจกต์)
+│   ├── geometry.py       # iou / merge / mask / polygon
+│   ├── registry.py       # ★ plugin registry → สลับโมเดลด้วยชื่อใน config
+│   └── logging_utils.py
+├── detection/            # [1] OCR + SAM
+│   ├── base.py           #   interface: TextDetector, BubbleSegmenter
+│   ├── ocr_detector.py   #   EasyOCRDetector, TesseractDetector
+│   ├── sam_segmenter.py  #   BoxPromptSegmenter, SAMSegmenter, FastSAMSegmenter
+│   └── pipeline.py       #   DetectionPipeline
+├── inpainting/           # [2] ลบข้อความเดิม
+│   ├── base.py           #   interface: Inpainter
+│   ├── masks.py          #   สร้าง mask ระดับตัวอักษร/บอลลูน
+│   ├── lama_inpainter.py #   LamaInpainter, IOPaintLaMaInpainter
+│   └── opencv_inpainter.py # OpenCVInpainter, MedianFillInpainter (fallback)
+├── translation/          # [3] แปลด้วย LLM
+│   ├── base.py           #   interface: Translator
+│   ├── glossary.py       #   CharacterProfile / Glossary / StoryContext
+│   ├── prompts.py        #   ★ System Prompt + User Prompt + JSON schema
+│   └── llm_translator.py #   LLMTranslator + AnthropicBackend + OpenAIBackend
+├── typesetting/          # [4] จัดวางข้อความไทย
+│   ├── base.py           #   TextStyle / TextLayout
+│   ├── thai_wrapper.py   #   ThaiTextWrapper (ตัดบรรทัด ไม่ตัดกลางคำ)
+│   ├── fitter.py         #   FontFitter (binary-search ขนาดฟอนต์)
+│   ├── renderer.py       #   PillowRenderer (auto-contrast + clip ใน mask)
+│   └── typesetter.py     #   Typesetter (orchestrator ของสเตจ)
+├── pipeline.py           # ★ ScanlationPipeline — เชื่อมทุกสเตจ
+└── cli.py                # command-line interface
+
+pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 4 ขั้นตอน (รันได้จริง)
+scripts/download_weights.py
+config/                   # characters.json / glossary.json / config.json
+fonts/                    # Sarabun-Regular.ttf / Sarabun-Bold.ttf
+requirements.txt / requirements-ml.txt / environment.yml
+```
+
+---
+
+## 3) การติดตั้ง (Conda / Virtual Environment)
+
+### ทางเลือก A: venv (แนะนำสำหรับเครื่องเดียว)
+
+```bash
+python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
+# 1) ของพื้นฐาน
+pip install -r requirements.txt
+
+# 2) ของหนัก (โมเดล ML) — ติดตั้ง torch ให้ตรงกับ CUDA ก่อน
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements-ml.txt
+
+# 3) ดาวน์โหลด checkpoint ของ SAM
+python scripts/download_weights.py --model vit_h       # หรือ vit_b (เบากว่า)
+
+# 4) (ถ้าใช้ Tesseract) ติดตั้งระดับระบบ
+sudo apt-get install -y tesseract-ocr libraqm-dev
+```
+
+### ทางเลือก B: Conda (แนะนำสำหรับจัดการ CUDA/Python 3.11)
+
+```bash
+conda env create -f environment.yml
+conda activate scanlation
+python scripts/download_weights.py
+```
+
+### ⚠️ สิ่งสำคัญที่มักลืม
+
+- **libraqm**: Pillow ต้องคอมไพล์ด้วย **libraqm** เพื่อจัดวางสระ/วรรณยุกต์ไทย
+  ให้ถูกตำแหน่ง (`pip install pillow` รุ่นใหม่มักมีให้มาแล้ว ถ้าไม่มี:
+  `pip install pillow --upgrade` หรือใช้ conda `pillow` จาก conda-forge)
+  ทดสอบ: `python -c "from PIL import features; print(features.check('raqm'))"` ต้องได้ `True`
+- **GPU/CPU**: ตั้ง `detection.sam_device` และ `inpainting.device` ให้ตรงเครื่อง
+  (ใช้ `cpu` ได้แต่ช้ามาก)
+- **API key**: `export ANTHROPIC_API_KEY=...` หรือ `OPENAI_API_KEY=...`
+
+---
+
+## 4) วิธีใช้
+
+### 4.1 ลองแบบเดโม (ไม่ต้องมี GPU/API key)
+
+```bash
+python pipeline_example.py --demo
+# → ได้ out/demo_before_after.png (ภาพเทียบก่อน/หลัง)
+```
+
+### 4.2 รันเต็มระบบ
+
+```bash
+# วางภาพต้นฉบับไว้ที่ orig/page-0001.webp, page-0002.webp, ...
+export ANTHROPIC_API_KEY=sk-ant-...
+
+python -m scanlation.cli run            # แปลทุกหน้า
+python -m scanlation.cli run 4 23 26    # เฉพาะบางหน้า
+python -m scanlation.cli detect 4       # ทดสอบเฉพาะ Detection + เซฟภาพ mask
+python -m scanlation.cli show-prompt    # ตรวจ system prompt ที่จะส่งให้ LLM
+python -m scanlation.cli init-config    # สร้าง config ตัวอย่าง
+```
+
+ผลลัพธ์: `out/page-XXXX.png` และไฟล์ intermediate ใน `.scanlation/`
+
+### 4.3 ใช้ผ่านโค้ด (Python API)
 
 ```python
-DATA[เลขหน้า] = [
-    {'b': [x0, y0, x1, y1],   # พิกัดกรอบข้อความในภาพต้นฉบับ
-     'k': 's' | 'n' | 'f',    # s=คำพูด, n=บรรยาย, f=เสียงเอฟเฟกต์
-     'th': 'ข้อความภาษาไทย'},  # ใช้ \n เพื่อบังคับขึ้นบรรทัดใหม่
-]
+from scanlation.config import ScanlationConfig
+from scanlation.pipeline import ScanlationPipeline
+
+cfg = ScanlationConfig()
+cfg.detection.sam_device = "cuda"
+cfg.inpainting.method = "lama"
+cfg.translation.backend = "anthropic"
+
+pipeline = ScanlationPipeline(cfg)          # สร้างคอมโพเนนต์จาก config อัตโนมัติ
+results = pipeline.run(pages=[4, 23, 26], do_translate=True)
+for r in results:
+    print(r.page_index, "->", r.output_path)
 ```
 
 ---
 
-## การติดตั้ง
+## 5) เจาะลึกแต่ละขั้นตอน (พร้อมตำแหน่งโค้ด)
 
-```bash
-pip install -r requirements.txt
-sudo apt-get install -y tesseract-ocr
-```
+### [1] Detection & Masking — `scanlation/detection/`
 
-## วิธีใช้
+- `ocr_detector.py` → อ่านข้อความ (`EasyOCRDetector` / `TesseractDetector`)
+- `sam_segmenter.py` → จัดกลุ่มบรรทัดให้เป็นบอลลูน แล้วใช้ **SAM** ตัด mask
+  - `SAMSegmenter` — ใช้ `segment_anything` (Meta) เป็นค่าเริ่มต้น
+    prompt = กรอบข้อความ, เลือก mask ที่ดีสุด, ขยายผลด้วย SAM2/MobileSAM ได้
+  - `FastSAMSegmenter` — ทางเลือกที่เบากว่า (ultralytics, รันบน CPU ได้)
+  - `BoxPromptSegmenter` — fallback ไม่ใช้ ML (ใช้ทดสอบ/unit test)
+  - จำแนกประเภทกล่อง: `speech` / `narration` / `sfx` ด้วย heuristic (ความสว่าง + ทรง)
+- **ทำไม SAM**: ให้ mask ที่แนบตามรูปทรงบอลลูนจริง → ขั้น inpaint ลบได้เฉพาะตัวอักษร
+  โดยไม่ทำลายเส้นขอบบอลลูน
 
-```bash
-# 1) ดาวน์โหลดรูปต้นฉบับไปไว้ที่ orig/page-XXXX.webp
+### [2] Inpainting — `scanlation/inpainting/`
 
-# 2) หาตำแหน่งข้อความด้วย OCR (ใช้ตั้งต้น)
-python3 extract2.py            # → blocks2.json
+- `masks.py::build_text_mask()` — สร้าง mask ระดับ **ตัวอักษร** (เทียบสีกับพื้นหลัง
+  มัธยฐาน → เก็บขอบ anti-alias ไม่เหลือ ghosting) และจำกัดให้อยู่ในบอลลูน (จาก SAM)
+- `lama_inpainter.py::LamaInpainter` — **LaMa** เติมพื้นหลังให้เนียน
+  (pad ขนาดให้หารด้วย 8 ลงตัวให้อัตโนมัติ)
+  - `IOPaintLaMaInpainter` — เชื่อม IOPaint เพื่อใช้โมเดลอื่น (MAT / MI-GAN / SD) ในอนาคต
+- `opencv_inpainter.py` — `OpenCVInpainter` (fallback เดิม) และ `MedianFillInpainter`
+  (เร็วสุด เหมาะบอลลูนสีพื้นเรียบ)
 
-# 3) ตรวจ/แก้พิกัดและคำแปลให้ถูกต้องใน data.py
+### [3] Translation — `scanlation/translation/`
 
-# 4) สร้างภาพแปลไทย
-python3 render.py              # ทั้งหมด → out/page-XXXX.png
-python3 render.py 4 23 26      # เฉพาะบางหน้า
+- `glossary.py` — นิยาม **CharacterProfile** (สรรพนาม/น้ำเสียง/วิธีเรียกคนอื่น),
+  **Glossary** (คำเฉพาะ) และ **StoryContext** (เรื่องย่อ + แนวทางภาษา)
+- `prompts.py` — สร้าง **System Prompt** ที่ "เน้นบริบทตัวละคร" + กติกาภาษาไทย
+  และบังคับ output เป็น JSON ที่ map ตาม id ของบล็อก
+- `llm_translator.py` — `LLMTranslator` (แปลทั้งหน้าในครั้งเดียว → คำสอดคล้องกัน)
+  - `AnthropicBackend` (Claude 3.5 Sonnet — ใช้ tool use บังคับ JSON)
+  - `OpenAIBackend` (GPT-4o — ใช้ Structured Outputs)
+  - มี **cache** (ไม่แปลซ้ำ) + **retry** + **glossary enforcement**
+- ตัวอย่าง config: `config/characters.json`, `config/glossary.json`
 
-# 5) ตรวจคุณภาพ (หา English ตกค้าง)
-python3 leftover.py
-```
+### [4] Typesetting — `scanlation/typesetting/`
 
----
-
-## รายละเอียด `render.py` (หัวใจของงาน)
-
-1. อ่านภาพจาก `orig/` + ข้อมูลจาก `data.py`
-2. หาสีพื้นหลังกรอบข้อความ (dominant color / median สีรอบกรอบ)
-3. **คำพูด/บรรยาย** → ลบของเดิมด้วย rounded rectangle สีพื้น แล้ววาดข้อความไทย (ฟอนต์ Sarabun)
-4. **เสียงเอฟเฟกต์** → ลบตัวอักษรเดิมด้วย `cv2.inpaint` แล้ววาดข้อความไทยแบบมีขอบ (stroke) ให้เด่น
-5. ตัดบรรทัดภาษาไทยด้วย `pythainlp.word_tokenize` (ไม่ตัดกลางคำ)
-6. ปรับขนาดฟอนต์อัตโนมัติให้พอดีกรอบ
-
----
-
-## เทคโนโลยีที่ใช้
-
-| เครื่องมือ | หน้าที่ |
-|---|---|
-| Pillow (PIL) | อ่าน/เขียนภาพ, วาดข้อความ (raqm → จัดสระไทยถูกต้อง) |
-| pytesseract + Tesseract OCR | อ่านข้อความอังกฤษในภาพ |
-| OpenCV (`cv2`) | inpainting ลบตัวอักษรเดิม |
-| pythainlp | ตัดคำไทยสำหรับขึ้นบรรทัดใหม่ |
-| NumPy | คำนวณสีพื้นหลัง / inpainting |
+- `thai_wrapper.py` — ตัดบรรทัดไทยด้วย `pythainlp.word_tokenize` (ไม่ตัดกลางคำ)
+  + จัดการคำละติน (เว้นวรรคถูกต้อง) + ซอยคำที่ยาวเกินกรอบ
+- `fitter.py` — **binary search** หาขนาดฟอนต์ที่ใหญ่สุดที่ยังพอดีกล่อง (2 รอบ strict→relaxed)
+- `renderer.py` — วาดด้วย Pillow: จัดกึ่งกลาง, **auto-contrast** (พื้นมืด→ตัวอักษรขาว),
+  **stroke** สำหรับ SFX และ **composite_clipped** ตัดข้อความไม่ให้ล้นบอลลูน
+- `typesetter.py` — รวมทุกอย่าง: ระยะขอบในบอลลูน (padding) + เลือกสี + วาด
 
 ---
 
-## หมายเหตุ
+## 6) การย้ายจากโปรเจกต์เดิม (Migration)
 
-- งานส่วนที่ต้องตัดสินใจคือการ **แก้พิกัดกรอบข้อความ** และ **คำแปล** เพราะ OCR อ่านเสียงเอฟเฟกต์ที่บิดเบี้ยวผิดบ่อย จึงควรตรวจซ้ำด้วย AI Vision ทีละหน้า
-- ชื่อเฉพาะ/URL (VORTEXSCANS.ORG, Realmheart ฯลฯ) คงไว้ตามต้นฉบับ
-- `samples/` มีตัวอย่างผลลัพธ์ 3 หน้าให้ดู (ไฟล์รูปการ์ตูนสงวนลิขสิทธิ์ ไม่ได้รวมทั้งหมดใน repo)
+| ไฟล์เดิม | แทนด้วย |
+|----------|---------|
+| `extract.py`, `extract2.py`, `tblocks.py`, `tscan.py`, `ocr_test.py` | `scanlation/detection/` (OCR + SAM) — ลบสคริปต์ 5 ตัวรวมเป็น 1 สเตจ |
+| `data.py` (พิกัด + คำแปลมือ) | `scanlation/schemas.py` (โครงสร้างอัตโนมัติ) + `config/glossary.json` + `config/characters.json` |
+| `render.py` (inpaint 4 เหลี่ยม + วาดไทย) | `scanlation/inpainting/` + `scanlation/typesetting/` |
+| `leftover.py`, `chk25.py` (QA) | ตรวจจาก `.scanlation/*_translation.json` ได้ (ผลลัพธ์ทุกสเตจเป็น JSON) |
 
-## สัญญาอนุญาต
+> จุดที่ยังต้องมี "คนตรวจ": พิกัดบอลลูนที่ SAM พลาด และคำแปลที่เป็นชื่อเฉพาะ
+> — แนะนำให้ตรวจผ่านไฟล์ JSON ใน `.scanlation/` แล้วแก้ก่อนเรนเดอร์รอบสุดท้าย
 
-โค้ดในโปรเจกต์นี้ใช้เพื่อการศึกษา/ทดลองเท่านั้น ตัวการ์ตูนและภาพต้นฉบับเป็นลิขสิทธิ์ของเจ้าของผลงาน
+---
+
+## 7) Tips การปรับคุณภาพ
+
+- **บอลลูนได้ mask ผิด** → เพิ่ม `detection.sam_expand`, ลด `merge_gap` (แยกบอลลูนที่ติดกัน),
+  หรือใช้ `use_auto_mask = true` (AutomaticMaskGenerator ช้ากว่าแต่ครบกว่า)
+- **ยังเหลือรอยข้อความ (ghosting)** → เพิ่ม `inpainting.mask_dilate` (เช่น 8→12)
+  หรือลด `inpainting.text_delta` (45→35) ให้จับตัวอักษรจางมากขึ้น
+- **ข้อความไทยล้นบอลลูน** → เพิ่ม `typesetting.padding_ratio` (0.14→0.18)
+  และลด `max_font_size`
+- **คำแปลสรรพนามมั่ว** → เพิ่มรายละเอียดใน `config/characters.json`
+  (pronouns / address_others / speech_style ให้ครบ)
+- **ค่าใช้จ่าย LLM** → เปิด cache ไว้ (ดีฟอลต์) และทดสอบด้วย `--no-translate` ก่อน
+
+---
+
+## 8) แก้ปัญหาที่พบบ่อย
+
+| อาการ | สาเหตุ/วิธีแก้ |
+|-------|----------------|
+| `cannot open resource` เวลาวาดฟอนต์ | path ฟอนต์ผิด — ตรวจ `typesetting.regular_font` |
+| สระ/วรรณยุกต์ไทยวางผิดที่ | Pillow ไม่มี libraqm → `features.check('raqm')` ต้องเป็น True |
+| `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง → `pip install -r requirements-ml.txt` |
+| SAM ช้ามากตอน `set_image` | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |
+| `CUDA out of memory` | ลด `sam_model_type` เป็น `vit_b` หรือตั้ง device = `cpu` |
+
+---
+
+## 9) สัญญาอนุญาต / ข้อจำกัด
+
+โค้ดนี้จัดทำเพื่อ **การศึกษา/ทดลอง** เท่านั้น ตัวการ์ตูนและภาพต้นฉบับเป็นลิขสิทธิ์
+ของเจ้าของผลงาน — โปรดขออนุญาตและให้เครดิตตามที่ควร

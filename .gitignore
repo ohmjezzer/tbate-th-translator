@@ -1,16 +1,30 @@
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
+env/
 
-# ภาพต้นฉบับ / ผลลัพธ์ขนาดใหญ่ (ไม่เก็บใน git)
-orig/
+# --- โมเดล / น้ำหนัก (ใหญ่ ไม่ควร commit) ---
+weights/
+*.pth
+*.pt
+*.onnx
+
+# --- Intermediate / ผลลัพธ์ / ภาพสงวนลิขสิทธิ์ ---
+.scanlation/
 out/
-dist/
-test/
-*.zip
+orig/
+samples/
+demo_*.png
+demo_page.json
 
-# OS
+# --- ความลับ ---
+.env
+*.key
+
+# --- OS / Editor ---
 .DS_Store
-Thumbs.db
+.idea/
+.vscode/
