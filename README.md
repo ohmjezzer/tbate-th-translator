@@ -98,16 +98,21 @@ scanlation/
 ├── pipeline.py           # ★ ScanlationPipeline — เชื่อมทุกสเตจ
 └── cli.py                # command-line interface
 
-pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 4 ขั้นตอน (รันได้จริง)
-scripts/download_weights.py
+pipeline_example.py       # ตัวอย่างเชื่อมทั้ง 5 ขั้นตอน (รันได้จริง)
+scripts/download_weights.py   # ดาวน์โหลด checkpoint ของ SAM
+scripts/check_env.py          # ตรวจว่าติดตั้ง environment ครบไหม
 config/                   # characters.json / glossary.json / config.json
 fonts/                    # Sarabun-Regular.ttf / Sarabun-Bold.ttf
+README.md / SETUP.md / ARCHITECTURE.md
 requirements.txt / requirements-ml.txt / environment.yml
 ```
 
 ---
 
 ## 3) การติดตั้ง (Conda / Virtual Environment)
+
+> 📖 **คู่มือติดตั้งแบบละเอียดทีละขั้น (Windows/macOS/Linux + GPU/CPU) อยู่ใน [`SETUP.md`](SETUP.md)**
+> และตรวจว่าติดตั้งครบไหมได้ด้วย `python scripts/check_env.py`
 
 ### ทางเลือก A: venv (แนะนำสำหรับเครื่องเดียว)
 
@@ -168,6 +173,7 @@ python -m scanlation.cli run 4 23 26    # เฉพาะบางหน้า
 python -m scanlation.cli detect 4       # ทดสอบเฉพาะ Detection + เซฟภาพ mask
 python -m scanlation.cli show-prompt    # ตรวจ system prompt ที่จะส่งให้ LLM
 python -m scanlation.cli init-config    # สร้าง config ตัวอย่าง
+python scripts/check_env.py             # ตรวจว่าติดตั้งครบไหม
 ```
 
 ผลลัพธ์: `out/page-XXXX.png` และไฟล์ intermediate ใน `.scanlation/`
