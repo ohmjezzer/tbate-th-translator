@@ -42,6 +42,13 @@ def _load_config(path: str | None) -> ScanlationConfig:
 
 def cmd_run(args) -> int:
     cfg = _load_config(args.config)
+    # ตรวจล่วงหน้า: ถ้าจะแปลแต่ยังไม่มีคีย์ ให้ข้อความแนะนำเป็นขั้นตอน (ไม่ให้ล้มกลางทาง)
+    if not args.no_translate and not cfg.api_key():
+        from .providers import missing_key_help
+
+        print(missing_key_help(cfg.translation.backend,
+                               command="python -m scanlation.cli run"), file=sys.stderr)
+        return 2
     pipeline = ScanlationPipeline(cfg)
     pages = [int(x) for x in args.pages] if args.pages else None
     results = pipeline.run(pages=pages, do_translate=not args.no_translate)

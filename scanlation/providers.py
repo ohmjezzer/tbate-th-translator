@@ -301,3 +301,47 @@ def all_env_keys() -> List[str]:
         if extra not in seen:
             seen.append(extra)
     return seen
+
+
+# ---------------------------------------------------------------------------
+# ข้อความช่วยเหลือเมื่อ "ยังไม่มี API key" (ให้ผู้ใช้เริ่มได้ทันที)
+# ---------------------------------------------------------------------------
+def missing_key_help(backend: str, command: str = "python pipeline_example.py") -> str:
+    """
+    สร้างข้อความแนะนำแบบเป็นขั้นตอน เมื่อยังไม่มีคีย์ของผู้ให้บริการที่เลือก
+    (เรียกใช้จาก pipeline_example.py / cli.py เพื่อ UX ที่ดีขึ้น)
+    """
+    p = get(backend)
+    if p is None:
+        return (f"ไม่รู้จัก backend '{backend}'\n"
+                f"ดูรายชื่อทั้งหมด:  python -m scanlation.cli setup --list")
+
+    tag = "ฟรี" if p.free else "เสียเงิน"
+    out: List[str] = [
+        f"ยังไม่มี API key สำหรับ backend '{backend}' "
+        f"(ผู้ให้บริการ: {p.display} [{tag}])",
+        "",
+        "เริ่มใช้งานได้ 3 ทาง เลือกอย่างใดอย่างหนึ่ง (ไม่ต้องมีโมเดลของตัวเอง):",
+        "",
+        "  1) ทดลองทันทีโดยไม่ต้องใช้คีย์เลย (โหมดเดโม):",
+        "       python pipeline_example.py --demo",
+        "",
+        "  2) ใช้ผู้ให้บริการ AI (มีระดับฟรี — สมัครแล้วได้คีย์เลย):",
+    ]
+    if p.signup_url:
+        out.append(f"       a) ขอคีย์{'ฟรี' if p.free else ''}ได้ที่: {p.signup_url}")
+    else:
+        out.append("       a) (ผู้ให้บริการนี้ไม่ต้องใช้คีย์ — ตรวจว่าติดตั้ง/รันเซิร์ฟเวอร์แล้ว)")
+    out += [
+        "       b) สร้างไฟล์ .env แล้วใส่คีย์ด้วยคำสั่งเดียว:",
+        f"            python -m scanlation.cli setup --provider {backend}",
+    ]
+    if p.primary_env():
+        out.append(f"          หรือแก้ไฟล์ .env เอง บรรทัด: {p.primary_env()}=<คีย์ของคุณ>")
+    out += [
+        f"       c) รันใหม่:   {command}",
+        "",
+        "  3) ดูผู้ให้บริการทั้งหมด (ฟรี/เสียเงิน) หรือเปลี่ยนเจ้า:",
+        "       python -m scanlation.cli setup --list",
+    ]
+    return "\n".join(out)
