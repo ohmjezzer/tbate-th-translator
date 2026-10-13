@@ -99,6 +99,7 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
     # ---------------- inpainting ----------------
     "SCANLATION_INPAINT_METHOD":  ("inpainting", "method", _str),
     "SCANLATION_INPAINT_DEVICE":  ("inpainting", "device", _str),
+    "SCANLATION_INPAINT_AUTO_FALLBACK": ("inpainting", "auto_fallback", _bool),
     "SCANLATION_MASK_DILATE":     ("inpainting", "mask_dilate", _int),
     "SCANLATION_TEXT_DELTA":      ("inpainting", "text_delta", _int),
     "SCANLATION_OPENCV_RADIUS":   ("inpainting", "opencv_radius", _int),

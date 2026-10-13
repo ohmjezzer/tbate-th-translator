@@ -70,7 +70,16 @@ class LamaInpainter(Inpainter):
             from simple_lama_inpainting import SimpleLama
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "ต้องติดตั้ง LaMa: pip install simple-lama-inpainting"
+                "ยังไม่ได้ติดตั้ง LaMa (simple-lama-inpainting)\n"
+                "  ⚠️ ข้อจำกัด: แพ็กเกจนี้กำหนด pillow<10 / numpy<2 จึงติดตั้งไม่ได้บน Python 3.13+\n"
+                "  เลือกทางใดทางหนึ่ง:\n"
+                "    1) ใช้ inpaint สำรองที่ติดตั้งได้ทันที (ไม่ต้องมี LaMa):\n"
+                "         สร้าง .env แล้วใส่  SCANLATION_INPAINT_METHOD=median\n"
+                "         (หรือ opencv สำหรับคุณภาพกลาง ๆ)\n"
+                "    2) ติดตั้ง LaMa บน Python 3.11/3.12:\n"
+                "         python3.11 -m venv .venv && pip install -r requirements-ml.txt\n"
+                "    3) ใช้ IOPaint (รองรับ Python/numpy ใหม่กว่า):\n"
+                "         pip install iopaint    แล้วตั้ง  SCANLATION_INPAINT_METHOD=iopaint"
             ) from exc
         device = self.cfg.device
         if torch is not None and device.startswith("cuda") and not torch.cuda.is_available():

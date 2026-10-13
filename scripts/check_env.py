@@ -278,7 +278,8 @@ def main() -> int:
     check_import("easyocr", "easyocr (OCR)", required=False,
                  fix="pip install -r requirements.txt")
     check_import("simple_lama_inpainting", "simple-lama-inpainting (LaMa)", required=False,
-                 fix="pip install -r requirements-ml.txt")
+                 fix="pip install -r requirements-ml.txt (ต้องใช้ Python <=3.12; "
+                     "Python ใหม่กว่าให้ใช้ SCANLATION_INPAINT_METHOD=median หรือ iopaint)")
     check_import("ultralytics", "ultralytics (FastSAM)", required=False,
                  fix="pip install -r requirements-ml.txt")
     check_import("anthropic", "anthropic SDK (Claude)", required=False,
@@ -291,8 +292,30 @@ def main() -> int:
         need("ติดตั้ง SAM (segment-anything) + LaMa สำหรับ Detection/Inpainting",
              "pip install -r requirements-ml.txt")
     if "simple_lama_inpainting" not in sys.modules:
-        need("ติดตั้ง LaMa (simple-lama-inpainting)",
-             "pip install -r requirements-ml.txt")
+        need("ติดตั้ง LaMa (simple-lama-inpainting) สำหรับ Inpainting คุณภาพสูง",
+             "pip install -r requirements-ml.txt   (ต้องใช้ Python <=3.12; "
+             "ถ้าใช้ Python ใหม่กว่า ให้ใช้ SCANLATION_INPAINT_METHOD=median|opencv|iopaint)")
+
+    # ---- inpaint ที่จะถูกใช้จริง (lama / iopaint / opencv / median) ----
+    try:
+        from scanlation.config import ScanlationConfig as _SC
+        from scanlation.env import apply_env as _ap
+        from scanlation.pipeline import ScanlationPipeline as _SP
+
+        inp_cfg = _ap(_SC()).inpainting
+        chosen = _SP.resolve_inpainter_method(
+            inp_cfg.method, allow_fallback=getattr(inp_cfg, "auto_fallback", True))
+        label = {"lama": "LaMa (คุณภาพดีสุด)", "iopaint": "IOPaint",
+                 "opencv": "OpenCV (cv2.inpaint)", "median": "Median fill (เร็วสุด)"}.get(
+                     chosen, chosen)
+        if chosen == inp_cfg.method:
+            ok(f"วิธีลบข้อความเดิมที่จะใช้: {label}")
+        else:
+            warn(f"inpainting.method='{inp_cfg.method}' ยังไม่พร้อม -> จะใช้ {label}",
+                 "ติดตั้ง LaMa: pip install -r requirements-ml.txt (ต้องใช้ Python <=3.12) "
+                 "หรือตั้ง SCANLATION_INPAINT_METHOD=median|opencv ใน .env")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"ตรวจวิธี inpaint ไม่ได้ ({exc})")
 
     # ---- segmenter ที่จะถูกใช้จริง (sam / fastsam / box / auto) ----
     try:

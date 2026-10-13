@@ -1,8 +1,21 @@
 # ===========================================================================
 # requirements-ml.txt — ตัวโมเดล Deep Learning (หนัก, ต้องมี torch)
-#   สำหรับ GPU NVIDIA: แนะนำติดตั้ง torch ให้ตรงกับ CUDA ก่อน เช่น
+#
+#   ⚠️ ข้อจำกัดด้านเวอร์ชัน Python (อ่านก่อนติดตั้ง!)
+#   ------------------------------------------------------------------------
+#   แพ็กเกจในไฟล์นี้ (โดยเฉพาะ simple-lama-inpainting) ยังตรึง dependency เก่า
+#   (pillow<10, numpy<2) จึงติดตั้งได้เฉพาะบน Python 3.9–3.12
+#   ถ้าใช้ Python 3.13+ จะ build ไม่ผ่าน (เช่น pillow 9.5.0 ล้ม: KeyError '__version__')
+#
+#   ทางเลือกเมื่อใช้ Python 3.13+:
+#     - Detection : ไม่ต้องติดตั้ง SAM ก็ได้ -> ตั้ง SCANLATION_SEGMENTER=box
+#     - Inpainting: ตั้ง SCANLATION_INPAINT_METHOD=median (หรือ opencv) แทน LaMa
+#                   หรือติดตั้ง iopaint (pip install iopaint) แล้วตั้ง method=iopaint
+#     - หรือสร้าง venv ด้วย Python 3.11/3.12 สำหรับโมเดล ML โดยเฉพาะ:
+#         python3.12 -m venv .venv-ml && . .venv-ml/bin/activate && pip install -r requirements-ml.txt
+#
+#   สำหรับ GPU NVIDIA: ติดตั้ง torch ให้ตรงกับ CUDA ก่อน เช่น
 #     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-#   แล้วค่อย: pip install -r requirements-ml.txt
 # ===========================================================================
 
 # --- PyTorch (ฐานของทั้ง SAM และ LaMa) ---
@@ -16,8 +29,10 @@ segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
 # --- FastSAM (ทางเลือก Segmentation ที่เบา/เร็ว รันบน CPU ได้) ---
 ultralytics>=8.1
 
-# --- LaMa Inpainting (แบบง่าย, ม้วนโมเดลมาให้ในแพ็กเกจ) ---
-simple-lama-inpainting>=0.1.2
+# --- LaMa Inpainting (แบบง่าย) ---
+#   ⚠️ ต้องใช้ Python 3.9–3.12 (ตรึง numpy<2, pillow<10)
+simple-lama-inpainting>=0.1.2; python_version < "3.13"
 
-# --- IOPaint (ชื่อเดิม lama-cleaner) — รองรับหลายโมเดล inpainting ---
+# --- IOPaint (ชื่อเดิม lama-cleaner) — รองรับหลายโมเดล inpainting + Python ใหม่กว่า ---
+#   ใช้แทน simple-lama-inpainting ได้เมื่อ Python 3.13+ (ตั้ง SCANLATION_INPAINT_METHOD=iopaint)
 iopaint>=1.3

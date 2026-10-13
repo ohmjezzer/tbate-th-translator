@@ -357,6 +357,28 @@ SCANLATION_SEGMENTER=box
 - `opencv_inpainter.py` — `OpenCVInpainter` (fallback เดิม) และ `MedianFillInpainter`
   (เร็วสุด เหมาะบอลลูนสีพื้นเรียบ)
 
+#### เลือกวิธีลบข้อความเดิม (inpainting)
+ตั้งผ่าน `.env` หรือ config — **ไม่ต้องแก้โค้ด**:
+
+| ค่า | ต้องติดตั้ง | คำอธิบาย |
+|---|---|---|
+| `lama` (ค่าดีฟอลต์) | `pip install -r requirements-ml.txt` | คุณภาพดีสุด (**ต้องใช้ Python ≤ 3.12**) |
+| `iopaint` | `pip install iopaint` | เทียบเท่า LaMa รองรับ Python ใหม่กว่า |
+| `opencv` | ไม่ต้องติดตั้งเพิ่ม | `cv2.inpaint` — คุณภาพกลาง ๆ ใช้ได้ทั่วไป |
+| `median` | ไม่ต้องติดตั้งเพิ่ม | เติมสี median — เร็วสุด เหมาะบอลลูนสีพื้น |
+| `auto` | — | เลือกให้เอง: lama → iopaint → opencv → median |
+
+```dotenv
+# ตัวอย่าง: ใช้ Python 3.13+ (simple-lama-inpainting ติดตั้งไม่ได้)
+SCANLATION_INPAINT_METHOD=median
+```
+> ⚠️ **`simple-lama-inpainting` กำหนด `pillow<10` / `numpy<2`** จึงติดตั้งได้เฉพาะ
+> **Python 3.9–3.12** เท่านั้น ถ้าใช้ Python 3.13+ ให้ใช้ `median`/`opencv`/`iopaint`
+> หรือสร้าง venv ด้วย Python 3.12 สำหรับงาน ML โดยเฉพาะ
+>
+> ถ้าตั้ง `lama` ไว้แต่ยังติดตั้งไม่ได้ ระบบจะ **ถอยไปใช้ `median` ให้เอง** (พร้อมคำเตือน)
+> ปิดได้ด้วย `SCANLATION_INPAINT_AUTO_FALLBACK=false`
+
 ### [3] Translation — `scanlation/translation/`
 
 - `glossary.py` — นิยาม **CharacterProfile** (สรรพนาม/น้ำเสียง/วิธีเรียกคนอื่น),
