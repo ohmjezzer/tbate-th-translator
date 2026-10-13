@@ -23,6 +23,44 @@
     </div>
   </header>
 
+  <!-- แถบเครื่องมือ -->
+  <div class="toolbar" id="toolbar">
+    <div class="toolgroup">
+      <button class="tool active" id="toolSelect" data-tool="select">✋ เลือก/ย้าย</button>
+      <button class="tool" id="toolBrush" data-tool="brush">🖌 แปรงลบพื้นหลัง</button>
+      <button class="tool" id="toolAdd" data-tool="add">➕ เพิ่มบอลลูน</button>
+    </div>
+
+    <div class="toolgroup hidden" id="brushControls">
+      <label class="inline">ขนาดแปรง: <b id="brushSizeVal">24</b>px
+        <input type="range" id="brushSize" min="4" max="120" value="24" />
+      </label>
+      <button class="btn primary" id="btnApplyInpaint">🪄 ลบพื้นที่ที่แปรง (AI)</button>
+      <button class="btn" id="btnClearBrush">✕ ล้างที่แปรง</button>
+      <button class="btn" id="btnUndoInpaint" title="ย้อนการลบครั้งล่าสุด">↶ Undo ลบ</button>
+      <span class="muted small">วาดทับส่วนที่อยากลบ แล้วกด "ลบพื้นที่ที่แปรง"</span>
+    </div>
+
+    <div class="toolgroup hidden" id="addControls">
+      <span class="muted small">ลากบนภาพเพื่อวาดกรอบบอลลูนใหม่</span>
+      <label class="inline">ชนิด:
+        <select id="newKind">
+          <option value="speech">คำพูด (speech)</option>
+          <option value="narration">บรรยาย (narration)</option>
+          <option value="sfx">เสียงเอฟเฟกต์ (sfx)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="toolgroup">
+      <button class="btn danger small-btn" id="btnDeleteBubble" disabled>🗑 ลบบอลลูนที่เลือก</button>
+      <label class="inline">ลำดับการวาด:
+        <select id="zorder"><option value="id">ตาม id</option><option value="y">บน→ล่าง</option></select>
+      </label>
+    </div>
+  </div>
+
   <main class="layout">
     <!-- แถบรายชื่อหน้า -->
     <aside class="sidebar pages">
@@ -46,6 +84,7 @@
       <div class="stage-inner" id="stageInner">
         <img id="pageImage" alt="page" />
         <div id="overlay" class="overlay"></div>
+        <canvas id="brushCanvas" class="brush-canvas"></canvas>
       </div>
       <div class="hint" id="hint">เลือกหน้าจากด้านซ้ายเพื่อเริ่มแก้ไข</div>
     </section>
@@ -71,14 +110,21 @@
         <label>สีตัวอักษร: <input type="color" id="colorInput" value="#111111" />
           <label class="chk"><input type="checkbox" id="colorOn" /> ใช้สีนี้</label>
         </label>
+        <label>ชนิดกล่อง:
+          <select id="kindSel">
+            <option value="speech">คำพูด (speech)</option>
+            <option value="narration">บรรยาย (narration)</option>
+            <option value="sfx">เสียงเอฟเฟกต์ (sfx)</option>
+          </select>
+        </label>
         <div class="row gap">
           <button class="btn tiny" id="nudgeL">◀</button>
           <button class="btn tiny" id="nudgeR">▶</button>
           <button class="btn tiny" id="nudgeU">▲</button>
           <button class="btn tiny" id="nudgeD">▼</button>
-          <span class="muted">(ขยับ 2px, กด Shift = 10px)</span>
+          <span class="muted">(ขยับ 2px, Shift = 10px)</span>
         </div>
-        <p class="muted small">ลากกรอบในภาพเพื่อ<b>ย้ายข้อความ</b> · ลากมุมขวาล่างเพื่อ<b>ปรับกรอบ</b></p>
+        <p class="muted small">ลากกรอบในภาพเพื่อ<b>ย้ายข้อความ</b> · ลากมุมขวาล่างเพื่อ<b>ปรับกรอบ</b> · ปุ่ม Delete = ลบ</p>
       </div>
     </aside>
   </main>
