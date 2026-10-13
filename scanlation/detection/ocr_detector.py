@@ -82,9 +82,16 @@ class TesseractDetector(TextDetector):
     (ใช้ psm 3 + 11 แล้ว merge บล็อกที่ทับกัน)
     """
 
-    def __init__(self, config: Optional[DetectionConfig] = None, psm_modes=(3, 11)):
+    def __init__(self, config: Optional[DetectionConfig] = None, psm_modes=(3, 11),
+                 group_by: Optional[str] = None, word_gap_factor: Optional[float] = None):
         self.cfg = config or DetectionConfig()
         self.psm_modes = psm_modes
+        # "line"  = รวมคำเป็น "บรรทัด" (แนะนำ — กันคำพูดกับ SFX ที่อยู่แนวเดียวกันถูกจับรวม)
+        # "block" = พฤติกรรมเดิมของ extract2.py (รวมทั้ง block ของ Tesseract)
+        self.group_by = group_by or getattr(self.cfg, "ocr_group_by", "line")
+        # แตกก้อนเมื่อช่องว่างระหว่างคำ > factor x ความสูงบรรทัด (0 = ปิด)
+        self.word_gap_factor = (word_gap_factor if word_gap_factor is not None
+                                else getattr(self.cfg, "ocr_word_gap_factor", 3.0))
 
     def _blocks_psm(self, image: np.ndarray, psm: int) -> List[TextBlock]:
         import collections
@@ -99,23 +106,59 @@ class TesseractDetector(TextDetector):
         df = df[df["text"].str.strip() != ""]
 
         groups: dict = collections.OrderedDict()
+
+        def key_of(r) -> tuple:
+            if self.group_by == "block":
+                return (int(r["block_num"]),)
+            # ต่อ "บรรทัด" = (block, paragraph, line) — ใช้ get เพื่อรองรับ output บางเวอร์ชัน
+            return (int(r.get("block_num", 0)), int(r.get("par_num", 0)),
+                    int(r.get("line_num", 0)))
+
         for _, r in df.iterrows():
             conf = float(r["conf"]) / 100.0
             if conf < self.cfg.ocr_min_confidence:
                 continue
-            groups.setdefault(int(r["block_num"]), []).append(r)
+            groups.setdefault(key_of(r), []).append(r)
 
         out: List[TextBlock] = []
-        for bnum, rows in groups.items():
-            x0 = int(min(r["left"] for r in rows))
-            y0 = int(min(r["top"] for r in rows))
-            x1 = int(max(r["left"] + r["width"] for r in rows))
-            y1 = int(max(r["top"] + r["height"] for r in rows))
-            text = " ".join(str(r["text"]).strip() for r in rows)
-            conf = max(float(r["conf"]) / 100.0 for r in rows)
-            out.append(TextBlock(uid=f"t{bnum}-{psm}", bbox=BBox(x0, y0, x1, y1),
-                                 source_text=text, confidence=conf))
+        for key, rows in groups.items():
+            # แยก "บรรทัด" ที่ Tesseract จับรวมกัน (เช่น คำพูดในบอลลูน กับ SFX ที่อยู่
+            # แนวเดียวกันแต่ห่างกันไกล) ออกเป็นก้อนตามช่องว่างแนวนอน
+            for sub in self._split_by_gap(rows):
+                x0 = int(min(r["left"] for r in sub))
+                y0 = int(min(r["top"] for r in sub))
+                x1 = int(max(r["left"] + r["width"] for r in sub))
+                y1 = int(max(r["top"] + r["height"] for r in sub))
+                text = " ".join(str(r["text"]).strip() for r in sub)
+                conf = max(float(r["conf"]) / 100.0 for r in sub)
+                tag = "-".join(str(k) for k in key)
+                out.append(TextBlock(uid=f"t{tag}-{psm}-{x0}", bbox=BBox(x0, y0, x1, y1),
+                                     source_text=text, confidence=conf))
         return out
+
+    def _split_by_gap(self, rows) -> List[list]:
+        """
+        แตกกลุ่มคำออกเป็น "ก้อน" เมื่อเจอช่องว่างแนวนอนใหญ่ผิดปกติ
+
+        เกณฑ์: ช่องว่างระหว่างคำ > word_gap_factor x ความสูงของบรรทัด
+        (ค่าเริ่มต้น 3.0 เท่า — ในมังงะช่องว่างระหว่าง "คำ" ปกติจะไม่ถึง 1 เท่าด้วยซ้ำ
+        แต่ช่องว่างระหว่าง "กล่องคำพูดกับ SFX" จะกว้างหลายเท่าตัว)
+        """
+        rows = sorted(rows, key=lambda r: int(r["left"]))
+        if not rows:
+            return []
+        line_h = float(np.median([float(r["height"]) for r in rows])) or 1.0
+        limit = max(24.0, self.word_gap_factor * line_h)
+
+        chunks: List[list] = [[rows[0]]]
+        prev_right = float(rows[0]["left"]) + float(rows[0]["width"])
+        for r in rows[1:]:
+            left = float(r["left"])
+            if left - prev_right > limit:
+                chunks.append([])
+            chunks[-1].append(r)
+            prev_right = max(prev_right, left + float(r["width"]))
+        return chunks
 
     def detect(self, image: np.ndarray) -> List[TextBlock]:
         merged: List[TextBlock] = []

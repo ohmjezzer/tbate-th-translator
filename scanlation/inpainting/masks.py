@@ -49,6 +49,30 @@ def _local_text_threshold(gray_region: np.ndarray, delta: int = 45) -> np.ndarra
     return mask
 
 
+def _line_boxes(bub: Bubble, w: int, h: int, pad: int) -> List[BBox]:
+    """
+    คืน "กรอบบรรทัด" ที่จะใช้คำนวณ mask
+
+    ทำไมต้องต่อบรรทัด (สำคัญมาก — แก้ปัญหาภาพไม่เนียน):
+        ถ้าใช้ bub.bbox ที่ "รวมทุกบรรทัด" เป็นพื้นที่เดียว พื้นที่ว่างระหว่างบรรทัด
+        และพื้นหลัง (โดยเฉพาะพื้นไล่สี/ลาย) จะถูกนับเป็น "ตัวอักษร" ด้วย เพราะค่า
+        มัธยฐานของบริเวณนั้นไม่ใช่สีเดียว -> mask บวมเป็นแถบใหญ่ -> inpaint ลบทั้งแถบ
+        (เห็นเป็นรอยสี่เหลี่ยมขาว ๆ ล้นออกนอกบอลลูน)
+
+        ถ้าคิดต่อ "บรรทัด" (bub.blocks) พื้นหลังข้างในแต่ละกรอบจะเป็นสีค่อนข้างเดียว
+        ทำให้แยกตัวอักษรได้แม่นกว่ามาก และ mask กระชับตามตัวอักษรจริง
+    """
+    boxes: List[BBox] = []
+    for tb in (bub.blocks or []):
+        box = tb.bbox.clip(w, h)
+        if box.width < 2 or box.height < 2:
+            continue
+        boxes.append(box.expand(pad).clip(w, h))
+    if not boxes:
+        return [bub.bbox.clip(w, h)]
+    return boxes
+
+
 def build_text_mask(
     image: np.ndarray,
     bubbles: Iterable[Bubble],
@@ -58,30 +82,38 @@ def build_text_mask(
     """
     สร้าง mask ระดับ "ตัวอักษร" จาก Bubble ทั้งหมด
     คืนค่า mask เป็น uint8 (0/255) ขนาดเท่าภาพ
+
+    หมายเหตุ: คิด mask "ต่อบรรทัด" (ดู _line_boxes) เพื่อไม่ให้พื้นหลังระหว่างบรรทัด
+    ถูกนับเป็นตัวอักษร (ตั้ง per_line=False เพื่อกลับไปใช้พฤติกรรมเดิม)
     """
     cfg = config or InpaintingConfig()
     h, w = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     mask = np.zeros((h, w), dtype=np.uint8)
+    per_line = getattr(cfg, "mask_per_line", True)
 
     for bub in bubbles:
         if bub.kind not in kinds:
             continue
-        box = bub.bbox.clip(w, h)
-        x0, y0, x1, y1 = box.to_int()
-        if x1 <= x0 or y1 <= y0:
-            continue
 
-        region = gray[y0:y1, x0:x1]
-        local_text = _local_text_threshold(region, delta=cfg.text_delta)
+        regions = _line_boxes(bub, w, h, getattr(cfg, "text_line_pad", 4)) \
+            if per_line else [bub.bbox.clip(w, h)]
 
-        # ถ้ามี mask ของบอลลูน (จาก SAM) ให้จำกัดการลบให้อยู่ในบอลลูนเท่านั้น
-        if bub.mask is not None:
-            bub_region = bub.mask[y0:y1, x0:x1]
-            if bub_region.shape == local_text.shape:
-                local_text = local_text & bub_region
+        for box in regions:
+            x0, y0, x1, y1 = box.to_int()
+            if x1 <= x0 or y1 <= y0:
+                continue
 
-        mask[y0:y1, x0:x1] |= local_text.astype(np.uint8) * 255
+            region = gray[y0:y1, x0:x1]
+            local_text = _local_text_threshold(region, delta=cfg.text_delta)
+
+            # ถ้ามี mask ของบอลลูน (จาก SAM) ให้จำกัดการลบให้อยู่ในบอลลูนเท่านั้น
+            if bub.mask is not None:
+                bub_region = bub.mask[y0:y1, x0:x1]
+                if bub_region.shape == local_text.shape:
+                    local_text = local_text & bub_region
+
+            mask[y0:y1, x0:x1] |= local_text.astype(np.uint8) * 255
 
     return geo.dilate_mask(mask, cfg.mask_dilate)
 
