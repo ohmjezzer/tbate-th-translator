@@ -289,12 +289,8 @@ def main() -> int:
 
     # เก็บเป็นขั้นตอนถัดไป (ต้องมีถ้าจะรันเต็มระบบด้วย SAM + LaMa)
     if "segment_anything" not in sys.modules:
-        need("ติดตั้ง SAM (segment-anything) + LaMa สำหรับ Detection/Inpainting",
+        need("ติดตั้ง SAM (segment-anything) สำหรับ Detection คุณภาพสูง",
              "pip install -r requirements-ml.txt")
-    if "simple_lama_inpainting" not in sys.modules:
-        need("ติดตั้ง LaMa (simple-lama-inpainting) สำหรับ Inpainting คุณภาพสูง",
-             "pip install -r requirements-ml.txt   (ต้องใช้ Python <=3.12; "
-             "ถ้าใช้ Python ใหม่กว่า ให้ใช้ SCANLATION_INPAINT_METHOD=median|opencv|iopaint)")
 
     # ---- inpaint ที่จะถูกใช้จริง (lama / iopaint / opencv / median) ----
     try:
@@ -305,15 +301,23 @@ def main() -> int:
         inp_cfg = _ap(_SC()).inpainting
         chosen = _SP.resolve_inpainter_method(
             inp_cfg.method, allow_fallback=getattr(inp_cfg, "auto_fallback", True))
-        label = {"lama": "LaMa (คุณภาพดีสุด)", "iopaint": "IOPaint",
-                 "opencv": "OpenCV (cv2.inpaint)", "median": "Median fill (เร็วสุด)"}.get(
-                     chosen, chosen)
-        if chosen == inp_cfg.method:
+        label = {"lama": "LaMa", "lama-simple": "LaMa (simple-lama-inpainting)",
+                 "lama-torch": "LaMa (torch/TorchScript — ใช้ได้บน Python 3.13+)",
+                 "iopaint": "IOPaint", "opencv": "OpenCV (cv2.inpaint)",
+                 "median": "Median fill (คุณภาพต่ำ)"}.get(chosen, chosen)
+        # นับว่า "พร้อม" ถ้าเลือกได้ LaMa จริง (lama -> lama-torch ก็ถือว่าดี)
+        if chosen in ("lama", "lama-simple", "lama-torch"):
             ok(f"วิธีลบข้อความเดิมที่จะใช้: {label}")
+            if str(inp_cfg.method).lower() == "lama" and chosen == "lama-torch":
+                print("      (ติดตั้ง simple-lama-inpainting ไม่ได้เพราะจำกัด Python <=3.12 "
+                      "— ใช้ torch แทนซึ่งคุณภาพเท่ากัน)")
         else:
-            warn(f"inpainting.method='{inp_cfg.method}' ยังไม่พร้อม -> จะใช้ {label}",
-                 "ติดตั้ง LaMa: pip install -r requirements-ml.txt (ต้องใช้ Python <=3.12) "
-                 "หรือตั้ง SCANLATION_INPAINT_METHOD=median|opencv ใน .env")
+            warn(f"วิธีลบข้อความเดิมที่จะใช้: {label} (คุณภาพจำกัด)",
+                 "ติดตั้ง LaMa: python scripts/download_weights.py --lama "
+                 "แล้วตั้ง SCANLATION_INPAINT_METHOD=lama-torch (หรือใช้ iopaint)")
+            need("ติดตั้ง LaMa (คุณภาพสูง) สำหรับ Inpainting",
+                 "pip install torch && python scripts/download_weights.py --lama "
+                 "แล้วตั้ง SCANLATION_INPAINT_METHOD=lama-torch")
     except Exception as exc:  # noqa: BLE001
         warn(f"ตรวจวิธี inpaint ไม่ได้ ({exc})")
 

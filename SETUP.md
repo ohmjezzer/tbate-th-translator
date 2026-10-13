@@ -200,21 +200,27 @@ echo "SCANLATION_SEGMENTER=box" >> .env
 
 ### 3.7 (ทางเลือก) LaMa สำหรับ Inpainting — ไม่ต้องมีก็รันได้
 
-ขั้นลบข้อความเดิมจะเลือกวิธีให้อัตโนมัติ (lama → iopaint → opencv → median)
-ถ้ายังไม่ติดตั้ง LaMa ระบบจะถอยไปใช้ `median` ให้ทันที จึง**รันได้เลย**
+ขั้นลบข้อความเดิมจะเลือกวิธีให้อัตโนมัติ ถ้ายังไม่ติดตั้ง LaMa ระบบจะถอยให้เอง
 
-> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12**
-> (ตรึง `pillow<10` / `numpy<2`) ถ้าใช้ Python 3.13+ จะ build ไม่ผ่าน
+> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12** (ตรึง `pillow<10`/`numpy<2`)
+> ถ้าใช้ Python 3.13+ (เช่น macOS) ให้ใช้ **`lama-torch`** ที่โหลดโมเดล TorchScript ตรง ๆ
 
 ```bash
-# (ทางเลือก) ติดตั้ง LaMa — เฉพาะ Python 3.9–3.12
-pip install -r requirements-ml.txt
+# ✅ ทางที่แนะนำเมื่อใช้ Python 3.13+ (ได้คุณภาพ LaMa จริง)
+pip install torch torchvision          # ถ้ายังไม่มี
+python scripts/download_weights.py --lama   # โหลด big-lama.pt (~205 MB)
+echo "SCANLATION_INPAINT_METHOD=lama-torch" >> .env
+#  หรือปล่อย method=lama ไว้ก็ได้ (ระบบจะเลือก lama-torch ให้เองเมื่อไม่มี simple)
 
-# ทางเลือกอื่นเมื่อใช้ Python ใหม่กว่า:
+# ทางอื่น
+pip install -r requirements-ml.txt     # เฉพาะ Python 3.9–3.12
 pip install iopaint && echo "SCANLATION_INPAINT_METHOD=iopaint" >> .env
-# หรือใช้ตัวที่รันได้ทันทีโดยไม่ต้องติดตั้งอะไร
-echo "SCANLATION_INPAINT_METHOD=median" >> .env      # หรือ opencv
+echo "SCANLATION_INPAINT_METHOD=median" >> .env   # เร็วสุด แต่คุณภาพต่ำ (ชั่วคราว)
 ```
+
+> ℹ️ **ความเร็ว**: GPU (CUDA) / Apple Silicon (MPS) เร็วมาก (~1–3 วิ/หน้า)
+> ส่วน CPU จะช้ากว่ามาก — ระบบเลือกอุปกรณ์ให้อัตโนมัติ (cuda → mps → cpu)
+> ถ้าอยากเลือกเอง: `SCANLATION_INPAINT_DEVICE=mps` (macOS) หรือ `cpu`
 
 ---
 
