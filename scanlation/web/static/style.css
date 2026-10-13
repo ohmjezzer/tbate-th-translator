@@ -45,6 +45,9 @@ body {
 #pageList li.active { background: var(--accent); color: #fff; }
 #pageList li .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
 #pageList li.has-out .dot { background: var(--accent-2); }
+#pageList li.not-ready .dot { background: #e0a020; }
+#pageList li.not-ready { color: var(--muted); }
+#pageList li .badge { font-size: 9px; color: #e0a020; }
 
 /* ---------- stage ---------- */
 .stage { position: relative; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; }
@@ -52,6 +55,21 @@ body {
 #pageImage { max-width: 100%; display: block; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
 .overlay { position: absolute; inset: 0; }
 .hint { margin-top: 10px; color: var(--muted); }
+
+/* ---------- empty state (หน้ายังไม่ประมวลผล) ---------- */
+.empty-state {
+  max-width: 520px; margin: 8vh auto; text-align: center; padding: 28px 24px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+}
+.empty-state .es-icon { font-size: 40px; margin-bottom: 6px; }
+.empty-state h2 { margin: 4px 0 8px; font-size: 18px; }
+.empty-state p { margin: 6px 0; }
+.es-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 14px 0 8px; flex-wrap: wrap; }
+.es-cmd {
+  display: inline-block; background: #0d0f14; border: 1px solid var(--line);
+  color: #8ee; padding: 7px 12px; border-radius: 8px; font-family: ui-monospace, monospace;
+  font-size: 13px; user-select: all;
+}
 
 /* ---------- editable bubble overlay ---------- */
 .bub {
@@ -113,3 +131,44 @@ input[type=range] { width: 100%; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { border-color: var(--danger); }
+
+/* ---------- toolbar ---------- */
+.toolbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line);
+  position: sticky; top: 53px; z-index: 15;
+}
+.toolgroup { display: flex; align-items: center; gap: 8px; }
+.toolbar .spacer { flex: 1; }
+.tool {
+  background: var(--panel); color: var(--txt); border: 1px solid var(--line);
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; font: inherit;
+}
+.tool:hover { background: #2b3040; }
+.tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+label.inline { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+label.inline input[type=range] { width: 110px; }
+.btn.danger { background: #3a1f26; border-color: var(--danger); color: #ffb3bf; }
+.btn.danger:hover { background: #4a2830; }
+.btn.small-btn { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* layout ปรับความสูงเมื่อมี toolbar */
+.layout { height: calc(100vh - 53px - 48px); }
+
+/* ---------- brush canvas ---------- */
+.brush-canvas {
+  position: absolute; inset: 0; z-index: 5;
+  cursor: crosshair; pointer-events: none;   /* เปิดเมื่ออยู่ในโหมดแปรง */
+  touch-action: none;
+}
+.stage-inner.brushing .brush-canvas { pointer-events: auto; }
+.stage-inner.adding #overlay { pointer-events: none; }
+
+/* กรอบบอลลูนที่กำลังเลือก/ลาก */
+.bub .del-badge {
+  position: absolute; right: -10px; top: -10px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--danger); color: #fff; font-size: 12px;
+  line-height: 18px; text-align: center; cursor: pointer; display: none;
+}
+.bub.selected .del-badge { display: block; }
