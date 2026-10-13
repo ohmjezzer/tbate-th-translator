@@ -170,18 +170,77 @@ class ScanlationPipeline:
                      "box": BoxPromptSegmenter}[name](d)
         return DetectionPipeline(detector, segmenter, d)
 
+    @staticmethod
+    def resolve_inpainter_method(name: str, allow_fallback: bool = True) -> str:
+        """
+        แปลงชื่อวิธี inpaint จาก config ให้เป็นตัวที่ "รันได้จริง" บนเครื่องนี้
+
+            "auto" -> เลือกตัวที่ดีที่สุดที่ติดตั้งไว้ (lama -> iopaint -> opencv -> median)
+            อื่น ๆ -> ตรวจ dependency จริง ถ้าไม่พร้อมและ auto_fallback=True
+                      จะถอยไปใช้ตัวที่รันได้แทน (พร้อมเตือน) เพื่อไม่ให้ pipeline ล้ม
+
+        เหตุผล: `simple-lama-inpainting` กำหนด pillow<10 / numpy<2 จึงติดตั้งไม่ได้
+        บน Python 3.13/3.14 — ต้องมีทางถอยไปใช้ OpenCV/Median ให้รันต่อได้
+        """
+        import importlib.util
+
+        def has(mod: str) -> bool:
+            try:
+                return importlib.util.find_spec(mod) is not None
+            except (ImportError, ValueError):
+                return False
+
+        needs = {
+            "lama": "simple_lama_inpainting",
+            "iopaint": "iopaint",
+            "opencv": "cv2",
+            "median": None,          # ไม่ต้องพึ่งอะไร (ใช้ numpy ล้วน)
+        }
+        name = (name or "auto").strip().lower()
+
+        if name == "auto":
+            for cand in ("lama", "iopaint", "opencv", "median"):
+                need = needs[cand]
+                if need is None or has(need):
+                    return cand
+            return "median"
+
+        # รองรับชื่อย่อยของ iopaint model เช่น method="mat"/"migan"/"zits"
+        if name not in needs and has("iopaint"):
+            return name
+        need = needs.get(name)
+        if need is not None and not has(need):
+            if allow_fallback:
+                logger_name = "median" if name in ("lama", "iopaint") else "opencv"
+                log.warning(
+                    "inpainting.method '%s' ยังไม่พร้อม (ขาดโมดูล '%s') — "
+                    "ถอยไปใช้ '%s' แทนชั่วคราว\n        "
+                    "ติดตั้ง LaMa: pip install -r requirements-ml.txt  "
+                    "(หมายเหตุ: simple-lama-inpainting ต้องใช้ Python <=3.12)",
+                    name, need, logger_name,
+                )
+                return logger_name
+            raise RuntimeError(
+                f"inpainting.method '{name}' ยังไม่พร้อม — ขาดโมดูล '{need}'\n"
+                f"  ติดตั้งด้วย: pip install -r requirements-ml.txt"
+            )
+        return name
+
     def _default_inpainter(self) -> Inpainter:
         i = self.cfg.inpainting
-        if i.method == "lama":
+        method = self.resolve_inpainter_method(i.method,
+                                               allow_fallback=getattr(i, "auto_fallback", True))
+        if method == "lama":
             return LamaInpainter(i)
-        if i.method == "opencv":
+        if method == "opencv":
             from .inpainting.opencv_inpainter import OpenCVInpainter
             return OpenCVInpainter(i)
-        if i.method == "median":
+        if method == "median":
             from .inpainting.opencv_inpainter import MedianFillInpainter
             return MedianFillInpainter(i)
+        # ที่เหลือ = iopaint (รองรับชื่อโมเดลอื่น ๆ เช่น mat/migan)
         from .inpainting.lama_inpainter import IOPaintLaMaInpainter
-        return IOPaintLaMaInpainter(i, model_name=i.method)
+        return IOPaintLaMaInpainter(i, model_name=method)
 
     def _default_translator(self) -> Translator:
         return LLMTranslator(self.cfg.translation)

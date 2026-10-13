@@ -198,6 +198,24 @@ python scripts/download_weights.py --model vit_b
 echo "SCANLATION_SEGMENTER=box" >> .env
 ```
 
+### 3.7 (ทางเลือก) LaMa สำหรับ Inpainting — ไม่ต้องมีก็รันได้
+
+ขั้นลบข้อความเดิมจะเลือกวิธีให้อัตโนมัติ (lama → iopaint → opencv → median)
+ถ้ายังไม่ติดตั้ง LaMa ระบบจะถอยไปใช้ `median` ให้ทันที จึง**รันได้เลย**
+
+> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12**
+> (ตรึง `pillow<10` / `numpy<2`) ถ้าใช้ Python 3.13+ จะ build ไม่ผ่าน
+
+```bash
+# (ทางเลือก) ติดตั้ง LaMa — เฉพาะ Python 3.9–3.12
+pip install -r requirements-ml.txt
+
+# ทางเลือกอื่นเมื่อใช้ Python ใหม่กว่า:
+pip install iopaint && echo "SCANLATION_INPAINT_METHOD=iopaint" >> .env
+# หรือใช้ตัวที่รันได้ทันทีโดยไม่ต้องติดตั้งอะไร
+echo "SCANLATION_INPAINT_METHOD=median" >> .env      # หรือ opencv
+```
+
 ---
 
 ## 4) ตั้งค่าด้วยไฟล์ `.env` (แนะนำ — ตั้งได้ทุกตัว)
@@ -429,8 +447,10 @@ python -m scanlation.cli preview                               # http://127.0.0.
 | `Cannot open resource` เวลาวาดฟอนต์ | path ฟอนต์ผิด | ตรวจ `typesetting.regular_font` = `fonts/Sarabun-Regular.ttf` |
 | สระ/วรรณยุกต์ไทยวางผิดตำแหน่ง | Pillow ไม่มี libraqm | `python -c "from PIL import features; print(features.check('raqm'))"` ต้องเป็น `True` → ติดตั้ง libraqm (ข้อ 3.5) |
 | `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง SAM | `pip install -r requirements-ml.txt` **หรือ** ตั้ง `SCANLATION_SEGMENTER=box` ใน `.env` เพื่อรันโดยไม่ต้องใช้ SAM |
-| `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` |
-| `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `cfg.inpainting.method = "median"` ชั่วคราว |
+| `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` หรือใช้ `SCANLATION_INPAINT_METHOD=median` |
+| `Failed to build 'pillow'` ตอนลง `simple-lama-inpainting` | แพ็กเกจตรึง `pillow<10`/`numpy<2` (ใช้ได้เฉพาะ Python 3.9–3.12) | ตั้ง `SCANLATION_INPAINT_METHOD=median` (หรือ `opencv`/`iopaint`) — หรือใช้ venv Python 3.12 |
+| `ERROR: ... simple-lama-inpainting` บน Python 3.13+ | เหตุผลเดียวกับข้างบน | แนะนำ `pip install iopaint` แล้วตั้ง `SCANLATION_INPAINT_METHOD=iopaint` |
+| `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `SCANLATION_INPAINT_METHOD=median` ชั่วคราว |
 | SAM ช้ามากตอนเริ่มหน้าแรก | SAM encode ภาพทั้งหน้า | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |
 | `CUDA out of memory` | GPU ไม่พอ | ตั้ง `sam_device = "cpu"` หรือใช้ `vit_b` |
 | `401 / authentication_error` | API key ผิด/ไม่ตั้ง | ตั้งใน `.env` (ดูข้อ 4) แล้วรัน `python scripts/check_env.py` |
