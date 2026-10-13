@@ -191,19 +191,35 @@ class ScanlationPipeline:
                 return False
 
         needs = {
-            "lama": "simple_lama_inpainting",
+            "lama": None,            # เป็น "กลุ่มนามธรรม" -> แก้ด้านล่าง (simple หรือ torch)
+            "lama-simple": "simple_lama_inpainting",
+            "lama-torch": "torch",
             "iopaint": "iopaint",
             "opencv": "cv2",
             "median": None,          # ไม่ต้องพึ่งอะไร (ใช้ numpy ล้วน)
         }
         name = (name or "auto").strip().lower()
 
+        # ตัวช่วยเลือก LaMa ที่ "ใช้ได้จริง": ถ้ามี simple-lama-inpainting ใช้ตัวนั้น
+        # ไม่งั้นถ้ามี torch -> ใช้ lama-torch (โหลด big-lama.pt ตรง ๆ ใช้ได้บน Python 3.13+)
+        def pick_lama() -> str:
+            if has("simple_lama_inpainting"):
+                return "lama-simple"
+            if has("torch"):
+                return "lama-torch"
+            return "median"
+
         if name == "auto":
             for cand in ("lama", "iopaint", "opencv", "median"):
+                if cand == "lama":
+                    return pick_lama()
                 need = needs[cand]
                 if need is None or has(need):
                     return cand
             return "median"
+
+        if name == "lama":
+            return pick_lama()
 
         # รองรับชื่อย่อยของ iopaint model เช่น method="mat"/"migan"/"zits"
         if name not in needs and has("iopaint"):
@@ -211,12 +227,13 @@ class ScanlationPipeline:
         need = needs.get(name)
         if need is not None and not has(need):
             if allow_fallback:
-                logger_name = "median" if name in ("lama", "iopaint") else "opencv"
+                logger_name = "median" if name in ("lama-simple", "lama-torch", "iopaint") else "opencv"
                 log.warning(
                     "inpainting.method '%s' ยังไม่พร้อม (ขาดโมดูล '%s') — "
                     "ถอยไปใช้ '%s' แทนชั่วคราว\n        "
                     "ติดตั้ง LaMa: pip install -r requirements-ml.txt  "
-                    "(หมายเหตุ: simple-lama-inpainting ต้องใช้ Python <=3.12)",
+                    "(หมายเหตุ: simple-lama-inpainting ต้องใช้ Python <=3.12; "
+                    "Python ใหม่กว่าให้ใช้ lama-torch)",
                     name, need, logger_name,
                 )
                 return logger_name
@@ -230,8 +247,11 @@ class ScanlationPipeline:
         i = self.cfg.inpainting
         method = self.resolve_inpainter_method(i.method,
                                                allow_fallback=getattr(i, "auto_fallback", True))
-        if method == "lama":
+        if method in ("lama", "lama-simple"):
             return LamaInpainter(i)
+        if method == "lama-torch":
+            from .inpainting.lama_torch_inpainter import LamaTorchInpainter
+            return LamaTorchInpainter(i)
         if method == "opencv":
             from .inpainting.opencv_inpainter import OpenCVInpainter
             return OpenCVInpainter(i)

@@ -65,9 +65,12 @@ class DetectionConfig:
 # ---------------------------------------------------------------------------
 @dataclass
 class InpaintingConfig:
-    method: str = "lama"                 # "lama" | "iopaint" | "opencv" | "median" | "auto"
-    device: str = "cuda"                 # อุปกรณ์ของ LaMa
+    method: str = "lama"                 # "lama" | "lama-torch" | "iopaint" | "opencv" | "median" | "auto"
+    device: str = "cuda"                 # อุปกรณ์ของ LaMa (cuda | mps | cpu)
     auto_fallback: bool = True           # ถ้า method ยังไม่พร้อม ให้ถอยไปใช้ตัวที่รันได้ (opencv/median)
+    lama_checkpoint: str = "weights/big-lama.pt"   # โมเดล LaMa TorchScript (method=lama-torch)
+    lama_auto_download: bool = True      # ดาวน์โหลดโมเดล LaMa อัตโนมัติเมื่อยังไม่มีไฟล์
+    lama_region_pad: int = 48            # ขอบ padding รอบบริเวณที่ inpaint (px) — เยอะ=เนียนแต่ช้า
     mask_dilate: int = 8                 # ขยาย mask ก่อน inpaint (px) กันขอบตัวอักษรค้าง
     text_delta: int = 45                 # เกณฑ์ต่างสี (0-255) ที่นับว่าเป็น "ตัวอักษร"
     opencv_radius: int = 4               # รัศมีของ cv2.inpaint (โหมด opencv)

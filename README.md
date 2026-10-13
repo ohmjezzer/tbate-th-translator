@@ -362,22 +362,29 @@ SCANLATION_SEGMENTER=box
 
 | ค่า | ต้องติดตั้ง | คำอธิบาย |
 |---|---|---|
-| `lama` (ค่าดีฟอลต์) | `pip install -r requirements-ml.txt` | คุณภาพดีสุด (**ต้องใช้ Python ≤ 3.12**) |
-| `iopaint` | `pip install iopaint` | เทียบเท่า LaMa รองรับ Python ใหม่กว่า |
-| `opencv` | ไม่ต้องติดตั้งเพิ่ม | `cv2.inpaint` — คุณภาพกลาง ๆ ใช้ได้ทั่วไป |
-| `median` | ไม่ต้องติดตั้งเพิ่ม | เติมสี median — เร็วสุด เหมาะบอลลูนสีพื้น |
-| `auto` | — | เลือกให้เอง: lama → iopaint → opencv → median |
+| `lama` (ค่าดีฟอลต์) | — | เลือก LaMa ที่ใช้ได้ให้เอง: `simple-lama` ถ้ามี → ไม่มีก็ใช้ `lama-torch` |
+| `lama-torch` | `pip install torch` | **โหลด `big-lama.pt` ตรง ๆ ผ่าน `torch.jit`** — ใช้ได้บน Python 3.13+ (เลี่ยง `pillow<10`) |
+| `iopaint` | `pip install iopaint` | ผ่าน IOPaint |
+| `opencv` | ไม่ต้องติดตั้งเพิ่ม | `cv2.inpaint` — คุณภาพกลาง ๆ |
+| `median` | ไม่ต้องติดตั้งเพิ่ม | ถมสี median — เร็วแต่ **คุณภาพต่ำ** (ใช้ชั่วคราว) |
+| `auto` | — | เลือกตัวที่ดีสุดที่รันได้ (lama → iopaint → opencv → median) |
 
 ```dotenv
-# ตัวอย่าง: ใช้ Python 3.13+ (simple-lama-inpainting ติดตั้งไม่ได้)
-SCANLATION_INPAINT_METHOD=median
+# ใช้ LaMa จริงบน Python 3.13+ (เช่น macOS + Python 3.14)
+SCANLATION_INPAINT_METHOD=lama-torch
+SCANLATION_LAMA_AUTO_DOWNLOAD=true      # ดาวน์โหลด big-lama.pt (~205 MB) ให้อัตโนมัติ
 ```
-> ⚠️ **`simple-lama-inpainting` กำหนด `pillow<10` / `numpy<2`** จึงติดตั้งได้เฉพาะ
-> **Python 3.9–3.12** เท่านั้น ถ้าใช้ Python 3.13+ ให้ใช้ `median`/`opencv`/`iopaint`
-> หรือสร้าง venv ด้วย Python 3.12 สำหรับงาน ML โดยเฉพาะ
+```bash
+# หรือดาวน์โหลดโมเดลเองล่วงหน้า
+python scripts/download_weights.py --lama
+```
+
+> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12** (ตรึง `pillow<10`/`numpy<2`)
+> ถ้าใช้ Python 3.13+ ให้ใช้ **`lama-torch`** (โหลดโมเดล TorchScript ตรง ๆ — คุณภาพเท่า LaMa ต้นฉบับ)
+> ระบบจะเลือกให้อัตโนมัติเมื่อ `method=lama`
 >
-> ถ้าตั้ง `lama` ไว้แต่ยังติดตั้งไม่ได้ ระบบจะ **ถอยไปใช้ `median` ให้เอง** (พร้อมคำเตือน)
-> ปิดได้ด้วย `SCANLATION_INPAINT_AUTO_FALLBACK=false`
+> ℹ️ **ความเร็ว**: บน GPU (CUDA) หรือ Apple Silicon (MPS) เร็วมาก (~1-3 วิ/หน้า)
+> บน CPU จะช้ากว่ามาก — ระบบถอยอัตโนมัติ: cuda → mps → cpu
 
 ### [3] Translation — `scanlation/translation/`
 
