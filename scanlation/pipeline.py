@@ -200,6 +200,9 @@ class ScanlationPipeline:
         }
         name = (name or "auto").strip().lower()
 
+        # ชื่อโมเดลของ IOPaint ที่รู้จัก (ใช้เมื่อผู้ใช้ตั้ง method เป็นชื่อโมเดลโดยตรง)
+        iopaint_models = {"mat", "migan", "zits", "ldm", "manga", "fcf", "cv2"}
+
         # ตัวช่วยเลือก LaMa ที่ "ใช้ได้จริง": ถ้ามี simple-lama-inpainting ใช้ตัวนั้น
         # ไม่งั้นถ้ามี torch -> ใช้ lama-torch (โหลด big-lama.pt ตรง ๆ ใช้ได้บน Python 3.13+)
         def pick_lama() -> str:
@@ -221,25 +224,43 @@ class ScanlationPipeline:
         if name == "lama":
             return pick_lama()
 
-        # รองรับชื่อย่อยของ iopaint model เช่น method="mat"/"migan"/"zits"
-        if name not in needs and has("iopaint"):
-            return name
+        # ตั้ง method เป็นชื่อโมเดลของ IOPaint โดยตรง (เช่น mat/migan/zits)
+        if name in iopaint_models:
+            if has("iopaint"):
+                return name
+            if allow_fallback:
+                log.warning("inpainting.method '%s' ต้องใช้ IOPaint (ยังไม่ติดตั้ง) — "
+                            "ถอยไปใช้ '%s'", name, pick_lama())
+                return pick_lama()
+            raise RuntimeError("ต้องติดตั้ง IOPaint: pip install iopaint")
+
+        # ตรวจก่อนว่าเป็นชื่อที่ "รู้จัก" ไหม — ถ้าไม่ ให้ error ชัดเจน (ไม่ส่งต่อไป IOPaint มั่ว ๆ)
         need = needs.get(name)
+        if need is None and name not in needs:
+            raise ValueError(
+                f"ไม่รู้จัก inpainting.method '{name}'\n"
+                f"  ที่รองรับ: lama | lama-torch | lama-simple | iopaint | opencv | median | auto\n"
+                f"  (หรือชื่อโมเดลของ IOPaint เช่น: {', '.join(sorted(iopaint_models))})"
+            )
+
         if need is not None and not has(need):
             if allow_fallback:
                 logger_name = "median" if name in ("lama-simple", "lama-torch", "iopaint") else "opencv"
+                hint = ""
+                if name == "lama-torch":
+                    hint = "  (ติดตั้ง torch: pip install torch torchvision)"
+                elif name == "lama-simple":
+                    hint = "  (simple-lama-inpainting ต้องใช้ Python <=3.12)"
                 log.warning(
                     "inpainting.method '%s' ยังไม่พร้อม (ขาดโมดูล '%s') — "
-                    "ถอยไปใช้ '%s' แทนชั่วคราว\n        "
-                    "ติดตั้ง LaMa: pip install -r requirements-ml.txt  "
-                    "(หมายเหตุ: simple-lama-inpainting ต้องใช้ Python <=3.12; "
-                    "Python ใหม่กว่าให้ใช้ lama-torch)",
-                    name, need, logger_name,
+                    "ถอยไปใช้ '%s' แทนชั่วคราว%s",
+                    name, need, logger_name, hint,
                 )
                 return logger_name
             raise RuntimeError(
                 f"inpainting.method '{name}' ยังไม่พร้อม — ขาดโมดูล '{need}'\n"
-                f"  ติดตั้งด้วย: pip install -r requirements-ml.txt"
+                f"  ติดตั้งด้วย: pip install torch && python scripts/download_weights.py --lama\n"
+                f"  หรือใช้: SCANLATION_INPAINT_METHOD=median"
             )
         return name
 
