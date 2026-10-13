@@ -144,6 +144,10 @@ SCANLATION_TRANSLATION_BACKEND=groq
 SCANLATION_TRANSLATION_MODEL=llama-3.3-70b-versatile
 GROQ_API_KEY=gsk_...
 ```
+> 🔄 **ชื่อโมเดลเปลี่ยนบ่อย** (ผู้ให้บริการเลิกรุ่นเก่าเป็นระยะ) — ถ้าเจอ error
+> `model not found` / `no longer available` ให้ดูรายชื่อที่ใช้ได้จริงด้วย
+> `python -m scanlation.cli models` แล้วตั้ง `SCANLATION_TRANSLATION_MODEL=<ชื่อใหม่>`
+> ใน `.env` (ค่าเริ่มต้นปัจจุบันคือ `gemini-3.8-flash`)
 ค่าทุกตัวโหลดจาก `.env` อัตโนมัติ โดยมีลำดับความสำคัญ:
 `env ในเชลล์ > ไฟล์ .env > config/config.json > ค่าดีฟอลต์`
 

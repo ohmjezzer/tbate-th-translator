@@ -51,7 +51,7 @@
   },
   "translation": {
     "backend": "gemini",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-3.8-flash",
     "temperature": 0.3,
     "max_tokens": 4096,
     "target_lang": "Thai",

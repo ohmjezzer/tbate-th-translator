@@ -126,6 +126,47 @@ def cmd_preview(args) -> int:
     return 0
 
 
+def cmd_models(args) -> int:
+    """
+    แสดงรายชื่อโมเดลที่ "ใช้ได้จริง" ของผู้ให้บริการปัจจุบัน
+
+        python -m scanlation.cli models
+        python -m scanlation.cli models --backend openai
+        python -m scanlation.cli models --grep gemini
+
+    จำเป็นเพราะชื่อโมเดลของผู้ให้บริการเปลี่ยนบ่อย (เช่นโมเดลเลิกให้บริการ)
+    """
+    cfg = _load_config(args.config)
+    if args.backend:
+        cfg.translation.backend = args.backend
+    if args.model:
+        cfg.translation.model = args.model
+
+    from .translation.models import ModelListError, list_models
+
+    print(f"ผู้ให้บริการ (backend): {cfg.translation.backend}")
+    print(f"โมเดลที่ตั้งไว้ตอนนี้   : {cfg.translation.model}")
+    print("กำลังดึงรายชื่อโมเดลจากผู้ให้บริการ...\n")
+    try:
+        names = list_models(cfg)
+    except ModelListError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        print("  ตรวจสอบ: คีย์ใน .env, การเชื่อมต่อเน็ต, และชื่อ backend "
+              "(python -m scanlation.cli setup --list)", file=sys.stderr)
+        return 2
+    if args.grep:
+        names = [n for n in names if args.grep.lower() in n.lower()]
+    if not names:
+        print("(ไม่พบโมเดลที่ตรงเงื่อนไข)")
+        return 0
+    for n in names:
+        mark = "  ← ตั้งไว้" if n == cfg.translation.model else ""
+        print(f"  - {n}{mark}")
+    print(f"\nพบ {len(names)} โมเดล")
+    print(f"ตั้งค่าใน .env ได้ด้วย:  SCANLATION_TRANSLATION_MODEL=<ชื่อโมเดล>")
+    return 0
+
+
 def cmd_detect(args) -> int:
     """ทดสอบเฉพาะสเตจ Detection & Masking (บันทึก mask ไว้ตรวจด้วยตา)"""
     import numpy as np
@@ -293,6 +334,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ps = sub.add_parser("sources", help="แสดงรายการ download source ที่ใช้ได้")
     ps.set_defaults(func=cmd_list_sources)
+
+    pm = sub.add_parser("models", help="แสดงรายชื่อโมเดลที่ใช้ได้จริงของผู้ให้บริการปัจจุบัน")
+    pm.add_argument("--backend", help="ระบุ backend (ค่าเริ่มต้น = จาก .env/config)")
+    pm.add_argument("--model", help="โมเดลที่ตั้งไว้ (ไว้ไฮไลต์ในรายการ)")
+    pm.add_argument("--grep", help="กรองชื่อโมเดล (เช่น gemini)")
+    pm.set_defaults(func=cmd_models)
 
     pd = sub.add_parser("detect", help="ทดสอบสเตจตรวจจับ")
     pd.add_argument("pages", nargs="*")

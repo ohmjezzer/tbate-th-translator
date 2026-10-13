@@ -51,6 +51,14 @@ class BBox:
     x1: float
     y1: float
 
+    def __post_init__(self) -> None:
+        # บังคับให้พิกัดเป็น float ของ Python จริง ๆ
+        # (EasyOCR/NumPy คืนค่าเป็น np.int32/np.float32 ซึ่ง json.dumps ไม่รู้จัก)
+        self.x0 = float(self.x0)
+        self.y0 = float(self.y0)
+        self.x1 = float(self.x1)
+        self.y1 = float(self.y1)
+
     # ---- คุณสมบัติที่คำนวณได้ -------------------------------------------
     @property
     def width(self) -> float:
@@ -260,13 +268,36 @@ class Page:
     def save_json(self, path: str | Path, include_mask: bool = True) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(
-            json.dumps(self.to_dict(include_mask=include_mask), ensure_ascii=False, indent=1),
+            json.dumps(self.to_dict(include_mask=include_mask), ensure_ascii=False,
+                       indent=1, default=_json_default),
             encoding="utf-8",
         )
 
     @staticmethod
     def load_json(path: str | Path) -> "Page":
         return Page.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+# ---------------------------------------------------------------------------
+# Helper: แปลงชนิดข้อมูลที่ json.dumps ไม่รู้จัก (เช่น numpy scalar/array)
+# ---------------------------------------------------------------------------
+def _json_default(o: Any) -> Any:
+    """
+    ตัวช่วยให้ json.dumps serialize ค่าที่มาจาก numpy ได้
+    (EasyOCR คืนพิกัดเป็น np.int32/np.float32 — ทำให้บันทึก JSON ล้มเหลวถ้าไม่แปลง)
+    """
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, (set, tuple)):
+        return list(o)
+    # สุดท้าย: แปลงเป็น string เพื่อไม่ให้ทั้งการบันทึกล้ม
+    return str(o)
 
 
 # ---------------------------------------------------------------------------

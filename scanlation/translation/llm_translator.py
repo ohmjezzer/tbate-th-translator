@@ -29,6 +29,7 @@ from ..schemas import Bubble, Page
 from ..utils.logging_utils import get_logger
 from .base import Translator, TranslationContext
 from .glossary import StoryContext, load_context
+from .models import normalize_model, suggest_from_error
 from .prompts import OUTPUT_SCHEMA, build_system_prompt, build_user_prompt
 
 log = get_logger(__name__)
@@ -84,7 +85,7 @@ class AnthropicBackend(LLMBackend):
             "input_schema": OUTPUT_SCHEMA,
         }
         resp = self._client.messages.create(
-            model=self.cfg.model,
+            model=normalize_model(self.cfg.model),
             max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
             system=system,
@@ -148,7 +149,7 @@ class OpenAIBackend(LLMBackend):
 
     def complete(self, system: str, user: str) -> Dict:
         resp = self._client.chat.completions.create(
-            model=self.cfg.model,
+            model=normalize_model(self.cfg.model),
             temperature=self.cfg.temperature,
             max_tokens=self.cfg.max_tokens,
             messages=[
@@ -288,6 +289,33 @@ class LLMTranslator(Translator):
         self._save_cache()
         return page
 
+    # ---- ตรวจว่า error เกิดจาก "โมเดลใช้ไม่ได้" (ไม่ควร retry) -----------
+    def _model_error_hint(self, exc: Exception) -> Optional[str]:
+        """
+        ถ้า error บอกว่าโมเดลเลิกให้บริการ/ไม่พบ -> คืนข้อความช่วยเหลือ
+        (พร้อมชื่อโมเดลที่ผู้ให้บริการแนะนำ + วิธีดูรายชื่อโมเดลจริง)
+        """
+        text = f"{exc}"
+        low = text.lower()
+        is_missing = any(s in low for s in (
+            "no longer available", "not_found", "not found", "does not exist",
+            "unsupported model", "unknown model", "invalid model", "deprecated",
+        ))
+        if not is_missing:
+            return None
+        suggested = suggest_from_error(text)
+        lines = [
+            f"โมเดล '{self.cfg.model}' ใช้ไม่ได้ (ผู้ให้บริการแจ้ง: ไม่พบ/เลิกให้บริการ)",
+        ]
+        if suggested:
+            lines.append(f"  ผู้ให้บริการแนะนำให้ใช้: {suggested}")
+        lines += [
+            f"  รายชื่อโมเดลที่ใช้ได้จริง:  python -m scanlation.cli models",
+            f"  แก้ไขได้โดยตั้งค่าใน .env:  SCANLATION_TRANSLATION_MODEL={suggested or '<ชื่อโมเดล>'}"
+            f"   (backend ปัจจุบัน: {self.cfg.backend})",
+        ]
+        return "\n".join(lines)
+
     # ---- เรียก backend พร้อม retry --------------------------------------
     def _call_with_retry(self, system: str, user: str) -> Dict:
         last_exc: Optional[Exception] = None
@@ -296,6 +324,10 @@ class LLMTranslator(Translator):
                 return self.backend.complete(system, user)
             except Exception as exc:  # noqa: BLE001 - ต้องกันทุก error เพื่อ retry
                 last_exc = exc
+                # ถ้าเป็นปัญหา "ชื่อโมเดล" ให้แจ้งทันที ไม่ต้อง retry ให้เสียเวลา
+                hint = self._model_error_hint(exc)
+                if hint:
+                    raise RuntimeError(hint) from exc
                 wait = 2 ** attempt
                 log.warning("เรียก LLM ล้มเหลว (ครั้งที่ %d): %s — รอ %ds",
                             attempt, exc, wait)
