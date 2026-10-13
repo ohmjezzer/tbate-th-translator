@@ -45,6 +45,9 @@ body {
 #pageList li.active { background: var(--accent); color: #fff; }
 #pageList li .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
 #pageList li.has-out .dot { background: var(--accent-2); }
+#pageList li.not-ready .dot { background: #e0a020; }
+#pageList li.not-ready { color: var(--muted); }
+#pageList li .badge { font-size: 9px; color: #e0a020; }
 
 /* ---------- stage ---------- */
 .stage { position: relative; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; }
@@ -52,6 +55,21 @@ body {
 #pageImage { max-width: 100%; display: block; border-radius: 6px; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
 .overlay { position: absolute; inset: 0; }
 .hint { margin-top: 10px; color: var(--muted); }
+
+/* ---------- empty state (หน้ายังไม่ประมวลผล) ---------- */
+.empty-state {
+  max-width: 520px; margin: 8vh auto; text-align: center; padding: 28px 24px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+}
+.empty-state .es-icon { font-size: 40px; margin-bottom: 6px; }
+.empty-state h2 { margin: 4px 0 8px; font-size: 18px; }
+.empty-state p { margin: 6px 0; }
+.es-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 14px 0 8px; flex-wrap: wrap; }
+.es-cmd {
+  display: inline-block; background: #0d0f14; border: 1px solid var(--line);
+  color: #8ee; padding: 7px 12px; border-radius: 8px; font-family: ui-monospace, monospace;
+  font-size: 13px; user-select: all;
+}
 
 /* ---------- editable bubble overlay ---------- */
 .bub {

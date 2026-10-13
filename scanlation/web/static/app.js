@@ -8,6 +8,7 @@
 const state = {
   project: null,
   page: null,          // ข้อมูลหน้าที่กำลังแก้ (จาก /api/page/<idx>)
+  pageIndex: null,     // เลขหน้าที่เลือกอยู่
   selected: null,      // uid ของบอลลูนที่เลือก
   view: 'out',         // out | cleaned | orig
   dirty: false,
@@ -20,8 +21,14 @@ const overlayEl = $('overlay');
 /* ------------------------- helpers ------------------------------ */
 async function api(path, opts) {
   const res = await fetch(path, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* ไม่ใช่ JSON */ }
+  if (!res.ok) {
+    const err = new Error(data.error || `HTTP ${res.status}`);
+    err.body = data;
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -49,13 +56,17 @@ async function loadProject() {
   }
   for (const p of state.project.pages) {
     const li = document.createElement('li');
-    li.className = p.out ? 'has-out' : '';
+    li.className = (p.out ? 'has-out ' : '') + (p.ready ? '' : 'not-ready');
     li.dataset.index = p.index;
-    li.innerHTML = `<span>หน้า ${p.index}</span><span class="dot"></span>`;
+    li.title = p.ready ? 'พร้อมแก้ไข' : 'ยังไม่ได้ประมวลผล';
+    li.innerHTML = `<span>หน้า ${p.index}</span>` +
+      (p.ready ? '<span class="dot"></span>'
+               : '<span class="badge">ยังไม่ประมวลผล</span><span class="dot"></span>');
     li.onclick = () => selectPage(p.index);
     ul.appendChild(li);
   }
-  selectPage(state.project.pages[0].index);
+  const first = state.project.pages.find((p) => p.ready) || state.project.pages[0];
+  selectPage(first.index);
 }
 
 async function selectPage(index) {
@@ -63,20 +74,46 @@ async function selectPage(index) {
     li.classList.toggle('active', Number(li.dataset.index) === index));
   state.selected = null;
   $('editPanel').classList.add('hidden');
+  state.pageIndex = index;
   try {
     state.page = await api(`/api/page/${index}`);
   } catch (e) {
-    toast(e.message, true);
-    overlayEl.innerHTML = '';
-    imgEl.removeAttribute('src');
+    state.page = null;
+    hideOverlayAndImage();
+    showEmptyState(index, e.body || { error: e.message });
     return;
   }
+  hideEmptyState();
   state.dirty = false;
   refreshImage();
   renderOverlay();
   renderBubbleList();
   $('hint').textContent =
     `หน้า ${index} · ${state.page.width}×${state.page.height} · ${state.page.bubbles.length} บอลลูน`;
+}
+
+function hideOverlayAndImage() {
+  overlayEl.innerHTML = '';
+  imgEl.removeAttribute('src');
+  $('hint').textContent = '';
+}
+
+/* ------------------------- empty state -------------------------- */
+function showEmptyState(index, info) {
+  const es = $('emptyState');
+  es.classList.remove('hidden');
+  $('esTitle').textContent = info.needs_run ? 'หน้านี้ยังไม่ได้ประมวลผล'
+                                            : 'เปิดหน้านี้ไม่ได้';
+  $('esMsg').textContent = info.error || '';
+  $('esCmd').textContent = info.command || `python -m scanlation.cli run ${index}`;
+  $('esHint').textContent = info.hint || '';
+  $('btnPrepare').dataset.index = index;
+  $('btnPrepare').disabled = false;
+  $('btnPrepare').textContent = '▶ ประมวลผลหน้านี้';
+}
+
+function hideEmptyState() {
+  $('emptyState').classList.add('hidden');
 }
 
 function refreshImage(force = false) {
@@ -331,6 +368,29 @@ $('btnSave').onclick = () => savePage(false);
 $('btnRender').onclick = () => renderPage();
 $('viewSelect').onchange = (e) => { state.view = e.target.value; refreshImage(true); };
 $('showOverlay').onchange = renderOverlay;
+
+/* ------------------------- prepare (ประมวลผลจากหน้าเว็บ) --------- */
+async function preparePage(index) {
+  const btn = $('btnPrepare');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = '⏳ กำลังประมวลผล... (อาจใช้เวลาหลายวินาที)';
+  try {
+    await api(`/api/page/${index}/prepare`, { method: 'POST' });
+    toast('ประมวลผลหน้านี้เสร็จแล้ว ✓');
+    await loadProject();                 // โหลดใหม่เพื่ออัปเดตสถานะหน้า
+    await selectPage(index);
+  } catch (e) {
+    const info = e.body || {};
+    $('esHint').textContent = (info.error || e.message) +
+      (info.hint ? ' — ' + info.hint : '');
+    toast('ประมวลผลไม่สำเร็จ: ' + (info.error || e.message), true);
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+$('btnPrepare').onclick = () => preparePage(Number($('btnPrepare').dataset.index));
+
 
 /* ------------------------- boot -------------------------------- */
 loadProject().catch((e) => toast('โหลดโปรเจกต์ไม่สำเร็จ: ' + e.message, true));

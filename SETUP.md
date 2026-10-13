@@ -408,6 +408,9 @@ python -m scanlation.cli preview          # → http://127.0.0.1:8000
 ```
 ควรเห็นหน้าเว็บแสดงผลการแปล เลือกหน้าได้ ลากย้าย/ปรับขนาดข้อความ และเรนเดอร์ใหม่ได้
 
+> ⚠️ ถ้าเปิดหน้าที่ขึ้น **404** แปลว่าหน้านั้นยังไม่ได้ประมวลผล (ไม่มีข้อมูลใน `.scanlation/`)
+> — กดปุ่ม **"▶ ประมวลผลหน้านี้"** ในหน้าเว็บ หรือรัน `python -m scanlation.cli run <n>`
+
 ---
 
 ## 7) คำสั่งสรุปแบบเร็ว (Cheat Sheet)
@@ -466,6 +469,7 @@ python -m scanlation.cli preview                               # http://127.0.0.
 | ดาวน์โหลดได้ไม่ครบทุกหน้า | เว็บเปลี่ยนโครงสร้าง / หน้าโดนล็อก | ดู `.scanlation/download_manifest.json` ว่า URL ไหนล้มเหลว; ปรับ `source_regex` หรือเพิ่ม cookie |
 | `pip install segment-anything` ค้าง/ล้มเหลว | ต้องมี git + คอมไพล์ | ติดตั้ง git ก่อน; ถ้ามี GPU ให้ลง torch เรียบร้อยก่อน |
 | `ModuleNotFoundError: flask` | ยังไม่ติดตั้ง Flask (โหมด preview) | `pip install -r requirements-web.txt` |
+| เปิดหน้า preview แล้ว `/api/page/<n>` ตอบ 404 | หน้านั้นยังไม่ได้ประมวลผล | กดปุ่ม "▶ ประมวลผลหน้านี้" ในหน้าเว็บ หรือ `python -m scanlation.cli run <n>` |
 | Tesseract ไม่พบ | ไม่ได้ติดตั้งโปรแกรม | `sudo apt install tesseract-ocr` (หรือ `brew install tesseract`) |
 
 ---
