@@ -40,7 +40,12 @@ class DetectionConfig:
     ocr_engine: str = "easyocr"          # "easyocr" | "tesseract"
     ocr_langs: tuple = ("en",)
     ocr_min_confidence: float = 0.40     # กรองคำที่มั่นใจต่ำ
+    ocr_group_by: str = "line"           # "line" (แนะนำ) = รวมคำเป็นบรรทัด | "block" = พฤติกรรมเดิม
+    ocr_word_gap_factor: float = 3.0     # แตกก้อนเมื่อช่องว่างระหว่างคำ > factor x ความสูงบรรทัด
     merge_gap: int = 16                  # ระยะห่างสูงสุด (px) ที่จัดว่าเป็นบอลลูนเดียวกัน
+    merge_min_x_overlap: float = 0.45    # ต้องทับซ้อนแนวนอน ≥ สัดส่วนนี้จึงรวมเป็นบอลลูนเดียว
+                                         # (กันการรวมคำพูดกับ SFX ที่อยู่แนวเดียวกันเข้าด้วยกัน)
+    merge_max_area_ratio: float = 8.0    # ห้ามรวมกรอบที่ขนาดต่างกันเกินอัตราส่วนนี้ (0 = ปิด)
 
     # --- Segmenter (ตัวตัดขอบเขตบอลลูน) ---
     #   "auto"   = เลือกให้อัตโนมัติ (sam ถ้าติดตั้งไว้ -> fastsam -> box) [แนะนำ]
@@ -73,6 +78,8 @@ class InpaintingConfig:
     lama_region_pad: int = 48            # ขอบ padding รอบบริเวณที่ inpaint (px) — เยอะ=เนียนแต่ช้า
     mask_dilate: int = 8                 # ขยาย mask ก่อน inpaint (px) กันขอบตัวอักษรค้าง
     text_delta: int = 45                 # เกณฑ์ต่างสี (0-255) ที่นับว่าเป็น "ตัวอักษร"
+    mask_per_line: bool = True           # คิด mask แยก "ต่อบรรทัด" (กันพื้นหลังถูกนับเป็นตัวอักษร)
+    text_line_pad: int = 4               # ขยายกรอบบรรทัดก่อนคิด mask (px)
     opencv_radius: int = 4               # รัศมีของ cv2.inpaint (โหมด opencv)
     opencv_method: str = "telea"         # telea | ns
     pad_to_multiple: int = 8             # LaMa ต้องการขนาดหารด้วย 8 ลงตัว

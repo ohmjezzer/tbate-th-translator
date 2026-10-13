@@ -40,6 +40,28 @@ from .base import BubbleSegmenter
 
 log = get_logger(__name__)
 
+# ชื่อไฟล์ checkpoint อย่างเป็นทางการของ Meta -> ชนิดโมเดล (ใช้ "เดาชนิดจากชื่อไฟล์")
+SAM_CHECKPOINT_NAME_HINTS = (
+    ("vit_h", "vit_h"), ("vit_l", "vit_l"), ("vit_b", "vit_b"),
+)
+# ลำดับความชอบเมื่อเจอหลายไฟล์: ตัวเล็กก่อน (กัน RAM/VRAM ระเบิดโดยไม่ตั้งใจ)
+SAM_SIZE_ORDER = {"vit_b": 0, "vit_l": 1, "vit_h": 2}
+
+
+def infer_model_type(filename: str) -> Optional[str]:
+    """
+    เดาชนิดโมเดล SAM จากชื่อไฟล์ เช่น 'sam_vit_b_01ec64.pth' -> 'vit_b'
+
+    ทำไมต้องมี: แต่ละชนิดมีสถาปัตยกรรมคนละขนาด ถ้าเอาฟайл vit_b ไปโหลดด้วย
+    sam_model_registry['vit_h'] จะโหลด state_dict ไม่ได้ (พังทันที) — จึงต้อง
+    ปรับ sam_model_type ให้ตรงกับไฟล์ที่เจอจริง ไม่ใช่เชื่อค่าที่ตั้งไว้
+    """
+    low = Path(filename).name.lower()
+    for token, mtype in SAM_CHECKPOINT_NAME_HINTS:
+        if token in low:
+            return mtype
+    return None
+
 
 # ---------------------------------------------------------------------------
 # คลาสฐาน: จัดกลุ่ม + จำแนกประเภท + mask เริ่มต้นแบบสี่เหลี่ยม
@@ -54,9 +76,21 @@ class BoxPromptSegmenter(BubbleSegmenter):
         """
         รวม TextBlock ที่มีช่องว่างระหว่างกันน้อยกว่า merge_gap ให้เป็นกลุ่มเดียว
         (ในมังงะ บรรทัดในบอลลูนเดียวกันจะห่างกันไม่เกินความสูงบรรทัด)
+
+        เงื่อนไขกัน "รวมผิด" (ต้นตอสำคัญของภาพไม่เนียน):
+            - merge_min_x_overlap : ต้องทับซ้อนแนวนอน ≥ สัดส่วนนี้ของกรอบที่แคบกว่า
+              จึงจะรวมกัน (บรรทัดในบอลลูนเดียวกันซ้อนแนวนอนกันเยอะ ส่วน SFX ที่อยู่
+              ข้าง ๆ บนแนวบรรทัดเดียวกับคำพูด จะไม่ซ้อนแนวนอน -> ไม่ถูกรวม)
+            - merge_max_area_ratio: ห้ามรวมกรอบที่ใหญ่/เล็กต่างกันเกินอัตราส่วนนี้
         """
         pairs = [(b.bbox, b) for b in blocks]
-        gap_groups = geo.merge_overlapping(pairs, gap=self.cfg.merge_gap, threshold=0.0)
+        gap_groups = geo.merge_overlapping(
+            pairs,
+            gap=self.cfg.merge_gap,
+            threshold=0.0,
+            min_x_overlap=self.cfg.merge_min_x_overlap,
+            max_area_ratio=self.cfg.merge_max_area_ratio,
+        )
 
         # merge_overlapping คืน (BBox, [payload]) — payload อาจเป็น BBox หรือ TextBlock
         # ขึ้นกับว่าเราส่ง object อะไรเข้าไป; ที่นี่เราส่ง TextBlock จึงได้ TextBlock กลับ
@@ -174,22 +208,32 @@ class SAMSegmenter(BoxPromptSegmenter):
         """
         หาไฟล์ checkpoint ของ SAM ที่ "มีอยู่จริง":
           1) ถ้า path ที่ตั้งไว้มีไฟล์ -> ใช้ตัวนั้น
-          2) ถ้าไม่มี -> ค้นหาไฟล์ sam_*.pth ในโฟลเดอร์เดียวกัน (เช่นผู้ใช้โหลด vit_b
-             แต่ตั้งค่าเป็น vit_h) -> ใช้ตัวที่เจอ (variant อาจต่างจากที่ตั้ง)
+          2) ถ้าไม่มี -> ค้นหาไฟล์ sam_*.pth / mobile_sam*.pt ในโฟลเดอร์เดียวกัน,
+             weights/, และ root ของโปรเจกต์ (เช่นผู้ใช้โหลด vit_b แต่ตั้งค่าเป็น vit_h)
+             -> เลือกตัวที่ "เล็กก่อน" (vit_b -> vit_l -> vit_h) กัน RAM ระเบิด
           3) ไม่เจอเลย -> คืน None
 
-        คืนค่า: path (str) ของ checkpoint ที่ใช้ได้ หรือ None
+        ※ คืนแค่ "ไฟล์" — ชนิดโมเดล (vit_b/vit_l/vit_h) จะถูกปรับให้ตรงกับไฟล์ให้
+          อัตโนมัติตอนโหลด ผ่าน infer_model_type() เพราะการเอาไฟล์ vit_b ไปโหลด
+          ด้วยสถาปัตยกรรม vit_h จะพังทันที
         """
         p = Path(configured)
         if p.is_file():
             return str(p)
-        # ค้นหา sam_*.pth ในโฟลเดอร์ของมัน (ถ้ามี) และใน weights/
-        for folder in {p.parent, Path("weights")}:
-            if folder and folder.is_dir():
-                found = sorted(folder.glob("sam_*.pth"))
-                if found:
-                    return str(found[0])
-        return None
+
+        root = Path(__file__).resolve().parent.parent.parent
+        folders = [p.parent, Path("weights"), root / "weights", root]
+        found: List[Path] = []
+        for folder in dict.fromkeys(f for f in folders if f):
+            if not folder.is_dir():
+                continue
+            found.extend(sorted(folder.glob("sam_*.pth")))
+            found.extend(sorted(folder.glob("mobile_sam*.pt")))
+        found = [f for f in found if f.is_file()]
+        if not found:
+            return None
+        best = min(found, key=lambda f: SAM_SIZE_ORDER.get(infer_model_type(f.name) or "", 9))
+        return str(best)
 
     def _load_model(self):
         if self._model is not None:
@@ -221,9 +265,21 @@ class SAMSegmenter(BoxPromptSegmenter):
                 f"      python scripts/download_weights.py --model {mtype}\n"
                 f"  (หรือใช้ตัวที่ไม่ต้องมี checkpoint: SCANLATION_SEGMENTER=box)"
             )
-        if ckpt != self.cfg.sam_checkpoint:
+
+        # ★ สำคัญ: ต้องโหลดด้วยสถาปัตยกรรม "ที่ตรงกับไฟล์"
+        #   (ถ้าตั้ง vit_h แต่ไฟล์ที่เจอเป็น vit_b แล้วโหลดด้วย vit_h จะ error ทันที)
+        inferred = infer_model_type(ckpt)
+        if inferred and inferred != mtype:
+            log.warning(
+                "checkpoint '%s' เป็นโมเดล '%s' แต่ตั้ง sam_model_type='%s' — ปรับเป็น '%s' ให้อัตโนมัติ",
+                Path(ckpt).name, inferred, mtype, inferred,
+            )
+            mtype = inferred
+            self.cfg.sam_model_type = inferred
+        elif ckpt != self.cfg.sam_checkpoint:
             log.warning("ไม่พบ '%s' แต่พบ '%s' — ใช้ไฟล์ที่พบแทน",
                         self.cfg.sam_checkpoint, ckpt)
+        self.cfg.sam_checkpoint = ckpt
 
         log.info("กำลังโหลด SAM (%s) จาก %s ...", mtype, ckpt)
         sam = sam_model_registry[mtype](checkpoint=ckpt)

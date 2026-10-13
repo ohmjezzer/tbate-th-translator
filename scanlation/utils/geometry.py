@@ -20,16 +20,34 @@ def iou(a: Sequence[float], b: Sequence[float]) -> float:
     return BBox.from_list(a).iou(BBox.from_list(b))
 
 
+def _x_overlap_ratio(a: "BBox", b: "BBox") -> float:
+    """สัดส่วนการทับซ้อน "แนวนอน" เทียบกับกรอบที่แคบกว่า (0..1)"""
+    iw = min(a.x1, b.x1) - max(a.x0, b.x0)
+    if iw <= 0:
+        return 0.0
+    return iw / max(1e-9, min(a.width, b.width))
+
+
 def merge_overlapping(
     boxes: List[Tuple[BBox, object]],
     gap: int = 0,
     threshold: float = 0.0,
+    min_x_overlap: float = 0.0,
+    max_area_ratio: float = 0.0,
 ) -> List[Tuple[BBox, List[object]]]:
     """
     จัดกลุ่มกรอบที่ทับซ้อน/ใกล้กันเข้าด้วยกัน (greedy union-find แบบง่าย)
 
     ใช้ในสเตจ Detection เพื่อรวม "บรรทัดข้อความหลายบรรทัดในบอลลูนเดียว"
     ให้กลายเป็นบอลลูนก้อนเดียว
+
+    พารามิเตอร์กัน "การรวมผิด" (สาเหตุหลักของภาพไม่เนียน):
+        min_x_overlap  : ต้องทับซ้อนแนวนอนอย่างน้อยสัดส่วนนี้ของกรอบที่แคบกว่า
+                         จึงจะยอมให้รวม (0 = ปิดการตรวจ = พฤติกรรมเดิม)
+                         จำเป็นมาก เพราะข้อความบอลลูน กับ SFX ที่อยู่ข้าง ๆ
+                         อยู่ "แนวเดียวกัน" แต่ไม่ควรถูกรวมเป็นก้อนเดียว
+        max_area_ratio : ห้ามรวมกรอบที่ขนาดต่างกันเกินอัตราส่วนนี้
+                         (เช่น กรอบรวมแถบกว้างทั้งหน้ากับคำสั้น ๆ) 0 = ปิด
 
     คืนค่า: list ของ (BBox รวม, list ของ payload ที่อยู่ในกลุ่ม)
     """
@@ -45,10 +63,23 @@ def merge_overlapping(
     def union(x: int, y: int) -> None:
         parent[find(x)] = find(y)
 
+    def compatible(a: "BBox", b: "BBox") -> bool:
+        if min_x_overlap > 0 and _x_overlap_ratio(a, b) < min_x_overlap:
+            return False
+        if max_area_ratio > 0:
+            big, small = max(a.area, b.area), min(a.area, b.area)
+            if small > 0 and big / small > max_area_ratio:
+                return False
+        return True
+
     # เตรียมกรอบที่ขยายตาม gap เพื่อวัด "ความใกล้"
     expanded = [b.expand(gap) for b, _ in boxes]
     for i in range(n):
         for j in range(i + 1, n):
+            if not _near(expanded[i], expanded[j]):
+                continue
+            if not compatible(expanded[i], expanded[j]):
+                continue
             if expanded[i].iou(expanded[j]) > threshold or _near(expanded[i], expanded[j]):
                 union(i, j)
 
