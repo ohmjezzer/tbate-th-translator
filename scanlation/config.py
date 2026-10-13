@@ -42,6 +42,14 @@ class DetectionConfig:
     ocr_min_confidence: float = 0.40     # กรองคำที่มั่นใจต่ำ
     merge_gap: int = 16                  # ระยะห่างสูงสุด (px) ที่จัดว่าเป็นบอลลูนเดียวกัน
 
+    # --- Segmenter (ตัวตัดขอบเขตบอลลูน) ---
+    #   "auto"   = เลือกให้อัตโนมัติ (sam ถ้าติดตั้งไว้ -> fastsam -> box) [แนะนำ]
+    #   "sam"    = Segment Anything Model (คุณภาพดีสุด ต้องติดตั้ง segment-anything + weights)
+    #   "fastsam"= FastSAM (เร็ว/เบา ต้องติดตั้ง ultralytics)
+    #   "box"    = ใช้กรอบสี่เหลี่ยมจาก OCR (ไม่ต้องติดตั้งอะไรเพิ่ม — รันได้ทันที)
+    segmenter: str = "auto"
+    auto_fallback: bool = True           # ถ้าเลือก segmenter ที่ยังไม่พร้อม ให้ถอยไปใช้ตัวที่รันได้โดยไม่ล้ม
+
     # --- SAM (Segment Anything Model) ---
     sam_model_type: str = "vit_h"        # vit_h | vit_l | vit_b  (หรือ mobile_sam)
     sam_checkpoint: str = "weights/sam_vit_h_4b8939.pth"

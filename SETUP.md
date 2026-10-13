@@ -183,6 +183,21 @@ brew install libraqm tesseract
 **Windows:** Pillow เวอร์ชันใหม่มี libraqm ให้ในตัว — ถ้า `check_env.py` รายงานว่าไม่มี
 ให้ลอง `pip install -U pillow` และใช้ Conda (`conda install -c conda-forge pillow`)
 
+### 3.6 (ทางเลือก) SAM สำหรับ Detection — ไม่ต้องมีก็รันได้
+
+ขั้น Detection จะเลือกตัวตัดขอบเขตบอลลูนให้อัตโนมัติ (SAM → FastSAM → Box)
+ถ้ายังไม่ติดตั้ง SAM ระบบจะถอยไปใช้ `box` (กรอบสี่เหลี่ยมจาก OCR) ให้ทันที
+จึง**รันได้เลยโดยไม่ต้องมี SAM** — แต่ติดตั้งแล้วจะได้ mask ที่แนบรูปบอลลูนมากขึ้น
+
+```bash
+# (ทางเลือก) ติดตั้ง SAM + ดาวน์โหลด weights
+pip install -r requirements-ml.txt
+python scripts/download_weights.py --model vit_b
+
+# หรือปิดการใช้ SAM ชั่วคราวด้วยการตั้งค่าใน .env
+echo "SCANLATION_SEGMENTER=box" >> .env
+```
+
 ---
 
 ## 4) ตั้งค่าด้วยไฟล์ `.env` (แนะนำ — ตั้งได้ทุกตัว)
@@ -401,7 +416,7 @@ python -m scanlation.cli sources                               # ดู source �
 |---|---|---|
 | `Cannot open resource` เวลาวาดฟอนต์ | path ฟอนต์ผิด | ตรวจ `typesetting.regular_font` = `fonts/Sarabun-Regular.ttf` |
 | สระ/วรรณยุกต์ไทยวางผิดตำแหน่ง | Pillow ไม่มี libraqm | `python -c "from PIL import features; print(features.check('raqm'))"` ต้องเป็น `True` → ติดตั้ง libraqm (ข้อ 3.5) |
-| `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง SAM | `pip install -r requirements-ml.txt` |
+| `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง SAM | `pip install -r requirements-ml.txt` **หรือ** ตั้ง `SCANLATION_SEGMENTER=box` ใน `.env` เพื่อรันโดยไม่ต้องใช้ SAM |
 | `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` |
 | `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `cfg.inpainting.method = "median"` ชั่วคราว |
 | SAM ช้ามากตอนเริ่มหน้าแรก | SAM encode ภาพทั้งหน้า | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |

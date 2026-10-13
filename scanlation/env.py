@@ -82,6 +82,8 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
     "SCANLATION_SOURCE_REGEX":         ("download", "source_regex", _str),
 
     # ---------------- detection ----------------
+    "SCANLATION_SEGMENTER":          ("detection", "segmenter", _str),
+    "SCANLATION_AUTO_FALLBACK":      ("detection", "auto_fallback", _bool),
     "SCANLATION_OCR_ENGINE":         ("detection", "ocr_engine", _str),
     "SCANLATION_OCR_LANGS":          ("detection", "ocr_langs", _csv_tuple),
     "SCANLATION_OCR_MIN_CONFIDENCE": ("detection", "ocr_min_confidence", _float),

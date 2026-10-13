@@ -30,6 +30,8 @@
     "ocr_langs": ["en"],
     "ocr_min_confidence": 0.4,
     "merge_gap": 16,
+    "segmenter": "auto",
+    "auto_fallback": true,
     "sam_model_type": "vit_h",
     "sam_checkpoint": "weights/sam_vit_h_4b8939.pth",
     "sam_device": "cuda",

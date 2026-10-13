@@ -111,12 +111,16 @@ def cmd_detect(args) -> int:
 
     from .detection import DetectionPipeline
     from .detection.ocr_detector import EasyOCRDetector
-    from .detection.sam_segmenter import SAMSegmenter
+    from .detection.sam_segmenter import BoxPromptSegmenter, FastSAMSegmenter, SAMSegmenter
     from .utils import image_io
 
     cfg = _load_config(args.config)
     d = cfg.detection
-    det = DetectionPipeline(EasyOCRDetector(d), SAMSegmenter(d), d)
+    # เลือก segmenter ผ่านตัว resolve เดียวกับ pipeline (ไม่ hardcode SAM)
+    name = ScanlationPipeline.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback)
+    segmenter = {"sam": SAMSegmenter, "fastsam": FastSAMSegmenter,
+                 "box": BoxPromptSegmenter}[name](d)
+    det = DetectionPipeline(EasyOCRDetector(d), segmenter, d)
     pipe = ScanlationPipeline(cfg, detection=det)
 
     for index, path in pipe.discover_pages():

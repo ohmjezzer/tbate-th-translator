@@ -294,6 +294,28 @@ def main() -> int:
         need("ติดตั้ง LaMa (simple-lama-inpainting)",
              "pip install -r requirements-ml.txt")
 
+    # ---- segmenter ที่จะถูกใช้จริง (sam / fastsam / box / auto) ----
+    try:
+        from scanlation.config import ScanlationConfig
+        from scanlation.env import apply_env
+        from scanlation.pipeline import ScanlationPipeline
+
+        seg_cfg = apply_env(ScanlationConfig()).detection
+        chosen = ScanlationPipeline.resolve_segmenter_name(
+            seg_cfg.segmenter, allow_fallback=True)
+        label = {"sam": "SAM (คุณภาพดีสุด)", "fastsam": "FastSAM (เร็ว/เบา)",
+                 "box": "Box (กรอบสี่เหลี่ยม — ไม่ต้องติดตั้งเพิ่ม)"}[chosen]
+        if chosen == "sam":
+            ok(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}")
+        elif seg_cfg.segmenter == "auto":
+            warn(f"segmenter=auto -> จะใช้ {label}",
+                 "ติดตั้ง SAM เพื่อคุณภาพสูงสุด: pip install -r requirements-ml.txt")
+        else:
+            warn(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}",
+                 "สลับด้วย SCANLATION_SEGMENTER=sam|fastsam|box ใน .env")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"ตรวจ segmenter ไม่ได้ ({exc})")
+
     # ------------------------------------------------- 3.1) Tesseract (ระบบ)
     section("3.1) Tesseract OCR (ใช้เฉพาะเมื่อ ocr_engine=tesseract — ปกติไม่ต้องมี)")
     try:

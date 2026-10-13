@@ -28,7 +28,6 @@ import numpy as np
 from .config import ScanlationConfig, TypesettingConfig, TranslationConfig, InpaintingConfig, DetectionConfig
 from .detection import DetectionPipeline
 from .detection.ocr_detector import EasyOCRDetector
-from .detection.sam_segmenter import SAMSegmenter
 from .downloader import ChapterDownloader, DownloadReport
 from .inpainting import Inpainter, LamaInpainter, build_text_mask
 from .schemas import Page
@@ -108,6 +107,53 @@ class ScanlationPipeline:
     # ------------------------------------------------------------------
     # Factory: สร้างคอมโพเนนต์จาก config
     # ------------------------------------------------------------------
+    @staticmethod
+    def resolve_segmenter_name(name: str, allow_fallback: bool = True) -> str:
+        """
+        แปลงชื่อ segmenter จาก config ให้เป็นตัวที่ "รันได้จริง" บนเครื่องนี้
+
+            "auto" -> เลือกตัวที่ดีที่สุดที่ติดตั้งไว้ (sam -> fastsam -> box)
+            อื่น ๆ  -> ตรวจว่าติดตั้ง dependency ครบไหม ถ้าไม่ และ auto_fallback=True
+                       จะถอยไปใช้ตัวที่รันได้แทน (พร้อมเตือน) เพื่อไม่ให้ pipeline ล้ม
+        """
+        import importlib.util
+
+        def has(mod: str) -> bool:
+            try:
+                return importlib.util.find_spec(mod) is not None
+            except (ImportError, ValueError):
+                return False
+
+        # ลำดับความสามารถ: sam (ดีสุด) -> fastsam -> box (ไม่ต้องพึ่งอะไร)
+        by_need = {"sam": "segment_anything", "fastsam": "ultralytics", "box": None}
+        name = (name or "auto").strip().lower()
+
+        if name == "auto":
+            for cand in ("sam", "fastsam", "box"):
+                need = by_need[cand]
+                if need is None or has(need):
+                    if cand != "sam":
+                        log.warning("segmenter=auto: ใช้ '%s' "
+                                    "(ติดตั้ง SAM เพื่อคุณภาพสูงสุด: pip install -r requirements-ml.txt)",
+                                    cand)
+                    return cand
+            return "box"
+
+        need = by_need.get(name)
+        if need is not None and not has(need):
+            if allow_fallback:
+                log.warning(
+                    "segmenter '%s' ยังไม่พร้อม (ขาดโมดูล '%s') — ถอยไปใช้ 'box' แทนชั่วคราว\n"
+                    "        ถ้าต้องการ '%s': pip install -r requirements-ml.txt",
+                    name, need, name,
+                )
+                return "box"
+            raise RuntimeError(
+                f"segmenter '{name}' ยังไม่พร้อม — ขาดโมดูล '{need}'\n"
+                f"  ติดตั้งด้วย: pip install -r requirements-ml.txt"
+            )
+        return name
+
     def _default_detection(self) -> DetectionPipeline:
         d = self.cfg.detection
         if d.ocr_engine == "tesseract":
@@ -116,7 +162,12 @@ class ScanlationPipeline:
         else:
             detector = EasyOCRDetector(d, gpu=d.sam_device.startswith("cuda"))
 
-        segmenter = SAMSegmenter(d)      # เปลี่ยนเป็น FastSAMSegmenter/BoxPromptSegmenter ได้
+        # เลือก segmenter ตาม config (sam / fastsam / box / auto) โดยไม่ hardcode SAM
+        name = self.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback)
+        from .detection.sam_segmenter import BoxPromptSegmenter, FastSAMSegmenter, SAMSegmenter
+
+        segmenter = {"sam": SAMSegmenter, "fastsam": FastSAMSegmenter,
+                     "box": BoxPromptSegmenter}[name](d)
         return DetectionPipeline(detector, segmenter, d)
 
     def _default_inpainter(self) -> Inpainter:

@@ -288,7 +288,7 @@ cfg.download.source_regex = r"https://cdn\.[^\"']+\.(webp|jpg|png)"
 ### [1] Detection & Masking — `scanlation/detection/`
 
 - `ocr_detector.py` → อ่านข้อความ (`EasyOCRDetector` / `TesseractDetector`)
-- `sam_segmenter.py` → จัดกลุ่มบรรทัดให้เป็นบอลลูน แล้วใช้ **SAM** ตัด mask
+- `sam_segmenter.py` → จัดกลุ่มบรรทัดให้เป็นบอลลูน แล้วตัด mask
   - `SAMSegmenter` — ใช้ `segment_anything` (Meta) เป็นค่าเริ่มต้น
     prompt = กรอบข้อความ, เลือก mask ที่ดีสุด, ขยายผลด้วย SAM2/MobileSAM ได้
   - `FastSAMSegmenter` — ทางเลือกที่เบากว่า (ultralytics, รันบน CPU ได้)
@@ -296,6 +296,23 @@ cfg.download.source_regex = r"https://cdn\.[^\"']+\.(webp|jpg|png)"
   - จำแนกประเภทกล่อง: `speech` / `narration` / `sfx` ด้วย heuristic (ความสว่าง + ทรง)
 - **ทำไม SAM**: ให้ mask ที่แนบตามรูปทรงบอลลูนจริง → ขั้น inpaint ลบได้เฉพาะตัวอักษร
   โดยไม่ทำลายเส้นขอบบอลลูน
+
+#### เลือกตัวตัดขอบเขตบอลลูน (segmenter)
+ตั้งผ่าน `.env` หรือ config — **ไม่ต้องแก้โค้ด**:
+
+| ค่า | ต้องติดตั้ง | คำอธิบาย |
+|---|---|---|
+| `auto` (ค่าดีฟอลต์) | — | เลือกให้อัตโนมัติ: SAM ถ้ามี → FastSAM → Box |
+| `sam` | `pip install -r requirements-ml.txt` | คุณภาพสูงสุด (ต้องมี weights) |
+| `fastsam` | `pip install -r requirements-ml.txt` | เร็ว/เบา รัน CPU ได้ |
+| `box` | ไม่ต้องติดตั้งอะไร | ใช้กรอบสี่เหลี่ยมจาก OCR — **รันได้ทันที** |
+
+```dotenv
+# ตัวอย่าง: อยากรันทันทีโดยยังไม่ติดตั้ง SAM
+SCANLATION_SEGMENTER=box
+```
+> ถ้าตั้ง `sam`/`fastsam` ไว้แต่ยังไม่ติดตั้ง โปรแกรมจะ **ถอยไปใช้ `box` ให้เอง**
+> (พร้อมคำเตือน) เพื่อไม่ให้ pipeline ล้ม — ปิดได้ด้วย `SCANLATION_AUTO_FALLBACK=false`
 
 ### [2] Inpainting — `scanlation/inpainting/`
 
