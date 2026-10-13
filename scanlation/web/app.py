@@ -265,15 +265,7 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
         path = server.media_path(kind, index)
         if path is None:
             return jsonify({"error": "ไม่พบไฟล์"}), 404
-        # ⚠️ ต้องส่ง "absolute path" ให้ send_file เสมอ
-        # เพราะ Flask ตีความ relative path เทียบกับ app.root_path (โฟลเดอร์
-        # ของแพ็กเกจ scanlation/web) ไม่ใช่ current working directory
-        # ถ้าส่ง relative (เช่น "out/page-0001.png") จะกลายเป็น
-        # scanlation/web/out/page-0001.png -> FileNotFoundError -> 500
-        try:
-            resp = send_file(str(Path(path).resolve()))
-        except FileNotFoundError:
-            return jsonify({"error": f"ไม่พบไฟล์จริงบนดิสก์: {path}"}), 404
+        resp = send_file(str(Path(path).resolve()))
         resp.headers["Cache-Control"] = "no-store"    # ให้เห็นผลหลังเรนเดอร์ใหม่ทันที
         return resp
 
