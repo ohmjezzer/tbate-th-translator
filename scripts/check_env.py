@@ -329,14 +329,17 @@ def main() -> int:
 
         seg_cfg = apply_env(ScanlationConfig()).detection
         chosen = ScanlationPipeline.resolve_segmenter_name(
-            seg_cfg.segmenter, allow_fallback=True)
+            seg_cfg.segmenter, allow_fallback=True, detection_cfg=seg_cfg)
         label = {"sam": "SAM (คุณภาพดีสุด)", "fastsam": "FastSAM (เร็ว/เบา)",
                  "box": "Box (กรอบสี่เหลี่ยม — ไม่ต้องติดตั้งเพิ่ม)"}[chosen]
         if chosen == "sam":
             ok(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}")
-        elif seg_cfg.segmenter == "auto":
-            warn(f"segmenter=auto -> จะใช้ {label}",
-                 "ติดตั้ง SAM เพื่อคุณภาพสูงสุด: pip install -r requirements-ml.txt")
+        elif seg_cfg.segmenter in ("sam", "auto"):
+            warn(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label} (ไม่ใช่ SAM)",
+                 "ติดตั้ง SAM: pip install -r requirements-ml.txt "
+                 "+ python scripts/download_weights.py --model vit_b")
+            need("ติดตั้ง SAM สำหรับ Detection คุณภาพสูง (ติดตั้งแล้วแต่ขาด checkpoint?)",
+                 "python scripts/download_weights.py --model vit_b")
         else:
             warn(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}",
                  "สลับด้วย SCANLATION_SEGMENTER=sam|fastsam|box ใน .env")

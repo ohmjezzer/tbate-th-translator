@@ -11,6 +11,7 @@ weights/
 *.pth
 *.pt
 *.onnx
+*.part
 
 # --- Intermediate / ผลลัพธ์ / ภาพสงวนลิขสิทธิ์ ---
 .scanlation/

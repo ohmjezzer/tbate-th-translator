@@ -108,13 +108,17 @@ class ScanlationPipeline:
     # Factory: สร้างคอมโพเนนต์จาก config
     # ------------------------------------------------------------------
     @staticmethod
-    def resolve_segmenter_name(name: str, allow_fallback: bool = True) -> str:
+    def resolve_segmenter_name(name: str, allow_fallback: bool = True,
+                               detection_cfg: Optional[DetectionConfig] = None) -> str:
         """
         แปลงชื่อ segmenter จาก config ให้เป็นตัวที่ "รันได้จริง" บนเครื่องนี้
 
-            "auto" -> เลือกตัวที่ดีที่สุดที่ติดตั้งไว้ (sam -> fastsam -> box)
-            อื่น ๆ  -> ตรวจว่าติดตั้ง dependency ครบไหม ถ้าไม่ และ auto_fallback=True
-                       จะถอยไปใช้ตัวที่รันได้แทน (พร้อมเตือน) เพื่อไม่ให้ pipeline ล้ม
+            "auto" -> เลือกตัวที่ดีที่สุดที่พร้อมใช้ (sam -> fastsam -> box)
+            อื่น ๆ  -> ตรวจว่าติดตั้ง dependency และมีไฟล์โมเดลครบไหม ถ้าไม่ และ
+                       auto_fallback=True จะถอยไปใช้ตัวที่รันได้แทน (พร้อมเตือน)
+
+        detection_cfg: ส่ง DetectionConfig เข้ามาเพื่อตรวจ "ไฟล์ checkpoint ของ SAM"
+        (ถ้าไม่ส่ง จะตรวจแค่ว่าติดตั้งโมดูล segment-anything หรือไม่)
         """
         import importlib.util
 
@@ -124,22 +128,49 @@ class ScanlationPipeline:
             except (ImportError, ValueError):
                 return False
 
+        def sam_ready() -> bool:
+            """SAM พร้อมใช้ไหม = มีโมดูล + มีไฟล์ checkpoint"""
+            if not has("segment_anything"):
+                return False
+            if detection_cfg is None:
+                return True
+            from .detection.sam_segmenter import SAMSegmenter
+            return SAMSegmenter.resolve_checkpoint(detection_cfg.sam_checkpoint) is not None
+
         # ลำดับความสามารถ: sam (ดีสุด) -> fastsam -> box (ไม่ต้องพึ่งอะไร)
-        by_need = {"sam": "segment_anything", "fastsam": "ultralytics", "box": None}
         name = (name or "auto").strip().lower()
 
         if name == "auto":
-            for cand in ("sam", "fastsam", "box"):
-                need = by_need[cand]
-                if need is None or has(need):
-                    if cand != "sam":
-                        log.warning("segmenter=auto: ใช้ '%s' "
-                                    "(ติดตั้ง SAM เพื่อคุณภาพสูงสุด: pip install -r requirements-ml.txt)",
-                                    cand)
-                    return cand
+            if sam_ready():
+                return "sam"
+            if has("ultralytics"):
+                log.warning("segmenter=auto: ใช้ 'fastsam' (SAM ยังไม่พร้อม — ขาด checkpoint "
+                            "หรือโมดูล segment-anything)")
+                return "fastsam"
+            log.warning("segmenter=auto: ใช้ 'box' (ติดตั้ง SAM: pip install -r requirements-ml.txt "
+                        "แล้ว python scripts/download_weights.py --model vit_b)")
             return "box"
 
-        need = by_need.get(name)
+        if name == "sam":
+            if sam_ready():
+                return "sam"
+            reason = ("ขาดโมดูล segment-anything" if not has("segment_anything")
+                      else "ยังไม่มีไฟล์ checkpoint ของ SAM")
+            if allow_fallback:
+                log.warning(
+                    "segmenter 'sam' ยังไม่พร้อม (%s) — ถอยไปใช้ 'box' แทนชั่วคราว\n"
+                    "        จะใช้ SAM ได้ต้อง:\n"
+                    "          pip install -r requirements-ml.txt\n"
+                    "          python scripts/download_weights.py --model vit_b",
+                    reason,
+                )
+                return "box"
+            raise RuntimeError(
+                f"segmenter 'sam' ยังไม่พร้อม — {reason}\n"
+                f"  ดาวน์โหลด checkpoint: python scripts/download_weights.py --model vit_b"
+            )
+
+        need = {"fastsam": "ultralytics", "box": None}.get(name)
         if need is not None and not has(need):
             if allow_fallback:
                 log.warning(
@@ -163,7 +194,8 @@ class ScanlationPipeline:
             detector = EasyOCRDetector(d, gpu=d.sam_device.startswith("cuda"))
 
         # เลือก segmenter ตาม config (sam / fastsam / box / auto) โดยไม่ hardcode SAM
-        name = self.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback)
+        name = self.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback,
+                                           detection_cfg=d)
         from .detection.sam_segmenter import BoxPromptSegmenter, FastSAMSegmenter, SAMSegmenter
 
         segmenter = {"sam": SAMSegmenter, "fastsam": FastSAMSegmenter,
