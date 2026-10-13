@@ -82,7 +82,7 @@ class TranslationConfig:
     # ค่าดีฟอลต์ตั้งไว้เป็น "ผู้ให้บริการฟรี" เพื่อให้เริ่มใช้งานได้ทันทีโดยไม่ต้องมี
     # โมเดล/บัตรเครดิตของตัวเอง (เปลี่ยนเป็น claude/gpt-4o ได้เมื่อพร้อม)
     backend: str = "gemini"                     # ผู้ให้บริการฟรี: gemini|groq|openrouter|cerebras|mistral|together|github|ollama
-    model: str = "gemini-2.0-flash"             # โมเดลฟรีที่แนะนำ (ดู: python -m scanlation.cli setup --list)
+    model: str = "gemini-3.8-flash"             # โมเดลฟรีที่แนะนำ (ดูรายชื่อที่ใช้ได้: python -m scanlation.cli models)
     temperature: float = 0.3
     max_tokens: int = 4096
     target_lang: str = "Thai"

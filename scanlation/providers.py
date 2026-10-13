@@ -62,10 +62,10 @@ CATALOG: Dict[str, Provider] = {
         api_style="openai",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         env_keys=["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        default_model="gemini-2.0-flash",
+        default_model="gemini-3.8-flash",
         free=True,
         signup_url="https://aistudio.google.com/app/apikey",
-        example_models=["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+        example_models=["gemini-3.8-flash", "gemini-3.8-pro", "gemini-2.5-flash", "gemini-2.5-pro"],
         notes="ขอคีย์ฟรีที่ Google AI Studio (ไม่ต้องใช้บัตรเครดิต) — แนะนำมากสำหรับเริ่มต้น",
     ),
     "groq": Provider(

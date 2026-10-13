@@ -230,7 +230,7 @@ environment variable ในเชลล์   ← สูงสุด (ใช้�
 # --- AI ฟรี (สเตจแปล) ---
 GEMINI_API_KEY=ใส่คีย์ฟรีของคุณ
 SCANLATION_TRANSLATION_BACKEND=gemini
-SCANLATION_TRANSLATION_MODEL=gemini-2.0-flash
+SCANLATION_TRANSLATION_MODEL=gemini-3.8-flash
 
 # --- อุปกรณ์ (cpu | cuda | mps) ---
 SCANLATION_PROFILE=gpu
@@ -261,7 +261,7 @@ SCANLATION_PROFILE=gpu     # SAM+Inpaint = cuda
 
 | ตัวแปร | ผู้ให้บริการ | ฟรี? | ตัวอย่างโมเดล |
 |---|---|---|---|
-| `GEMINI_API_KEY` | Google Gemini | ✅ | `gemini-2.0-flash`, `gemini-2.5-pro` |
+| `GEMINI_API_KEY` | Google Gemini | ✅ | `gemini-3.8-flash`, `gemini-3.8-pro` |
 | `GROQ_API_KEY` | Groq | ✅ | `llama-3.3-70b-versatile` |
 | `OPENROUTER_API_KEY` | OpenRouter | ✅ | `meta-llama/llama-3.3-70b-instruct:free` |
 | `CEREBRAS_API_KEY` | Cerebras | ✅ | `llama-3.3-70b` |
@@ -413,6 +413,7 @@ python -m scanlation.cli download "<chapter_url>" --limit 3   # [0] ดาวน
 python -m scanlation.cli run                                   # [1-4] แปล + จัดวาง
 python -m scanlation.cli detect 1                              # ทดสอบ SAM + เซฟ mask
 python -m scanlation.cli sources                               # ดู source ที่รองรับ
+python -m scanlation.cli models                                # ดูรายชื่อโมเดลที่ใช้ได้จริง
 
 # --- Preview/แก้ไขผลการแปล (frontend) ---
 pip install -r requirements-web.txt
@@ -433,6 +434,7 @@ python -m scanlation.cli preview                               # http://127.0.0.
 | SAM ช้ามากตอนเริ่มหน้าแรก | SAM encode ภาพทั้งหน้า | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |
 | `CUDA out of memory` | GPU ไม่พอ | ตั้ง `sam_device = "cpu"` หรือใช้ `vit_b` |
 | `401 / authentication_error` | API key ผิด/ไม่ตั้ง | ตั้งใน `.env` (ดูข้อ 4) แล้วรัน `python scripts/check_env.py` |
+| `404 model not found` / `no longer available` (เช่น Gemini เปลี่ยนรุ่น) | ชื่อโมเดลเลิกให้บริการ | `python -m scanlation.cli models` เพื่อดูชื่อที่ใช้ได้ แล้วตั้ง `SCANLATION_TRANSLATION_MODEL=<ชื่อใหม่>` ใน `.env` |
 | `cannot write mode RGBA as JPEG` | บันทึกภาพ RGBA เป็น JPEG | โปรเจกต์จัดการให้แล้ว (แปลงเป็น RGB) — ถ้าเจอ ให้อัปเดต Pillow |
 | ดาวน์โหลดได้ไม่ครบทุกหน้า | เว็บเปลี่ยนโครงสร้าง / หน้าโดนล็อก | ดู `.scanlation/download_manifest.json` ว่า URL ไหนล้มเหลว; ปรับ `source_regex` หรือเพิ่ม cookie |
 | `pip install segment-anything` ค้าง/ล้มเหลว | ต้องมี git + คอมไพล์ | ติดตั้ง git ก่อน; ถ้ามี GPU ให้ลง torch เรียบร้อยก่อน |
