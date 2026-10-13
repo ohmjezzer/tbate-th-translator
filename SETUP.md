@@ -451,6 +451,7 @@ python -m scanlation.cli preview                               # http://127.0.0.
 | อาการ | สาเหตุ | วิธีแก้ |
 |---|---|---|
 | `Cannot open resource` เวลาวาดฟอนต์ | path ฟอนต์ผิด | ตรวจ `typesetting.regular_font` = `fonts/Sarabun-Regular.ttf` |
+| หน้า preview ขึ้น `/media/... 500 Internal Server Error` | (แก้แล้ว) Flask ตีความ relative path เทียบ `app.root_path` ไม่ใช่ cwd | อัปเดตโค้ดล่าสุด (ใช้ absolute path ใน `send_file`) |
 | สระ/วรรณยุกต์ไทยวางผิดตำแหน่ง | Pillow ไม่มี libraqm | `python -c "from PIL import features; print(features.check('raqm'))"` ต้องเป็น `True` → ติดตั้ง libraqm (ข้อ 3.5) |
 | `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง SAM | `pip install -r requirements-ml.txt` **หรือ** ตั้ง `SCANLATION_SEGMENTER=box` ใน `.env` เพื่อรันโดยไม่ต้องใช้ SAM |
 | `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` หรือใช้ `SCANLATION_INPAINT_METHOD=median` |
