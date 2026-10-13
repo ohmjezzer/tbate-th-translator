@@ -43,6 +43,9 @@
   "inpainting": {
     "method": "lama",
     "device": "cuda",
+    "auto_fallback": true,
+    "lama_checkpoint": "weights/big-lama.pt",
+    "lama_auto_download": true,
     "mask_dilate": 8,
     "text_delta": 45,
     "opencv_radius": 4,

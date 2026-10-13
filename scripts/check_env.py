@@ -278,7 +278,8 @@ def main() -> int:
     check_import("easyocr", "easyocr (OCR)", required=False,
                  fix="pip install -r requirements.txt")
     check_import("simple_lama_inpainting", "simple-lama-inpainting (LaMa)", required=False,
-                 fix="pip install -r requirements-ml.txt")
+                 fix="pip install -r requirements-ml.txt (ต้องใช้ Python <=3.12; "
+                     "Python ใหม่กว่าให้ใช้ SCANLATION_INPAINT_METHOD=median หรือ iopaint)")
     check_import("ultralytics", "ultralytics (FastSAM)", required=False,
                  fix="pip install -r requirements-ml.txt")
     check_import("anthropic", "anthropic SDK (Claude)", required=False,
@@ -288,11 +289,37 @@ def main() -> int:
 
     # เก็บเป็นขั้นตอนถัดไป (ต้องมีถ้าจะรันเต็มระบบด้วย SAM + LaMa)
     if "segment_anything" not in sys.modules:
-        need("ติดตั้ง SAM (segment-anything) + LaMa สำหรับ Detection/Inpainting",
+        need("ติดตั้ง SAM (segment-anything) สำหรับ Detection คุณภาพสูง",
              "pip install -r requirements-ml.txt")
-    if "simple_lama_inpainting" not in sys.modules:
-        need("ติดตั้ง LaMa (simple-lama-inpainting)",
-             "pip install -r requirements-ml.txt")
+
+    # ---- inpaint ที่จะถูกใช้จริง (lama / iopaint / opencv / median) ----
+    try:
+        from scanlation.config import ScanlationConfig as _SC
+        from scanlation.env import apply_env as _ap
+        from scanlation.pipeline import ScanlationPipeline as _SP
+
+        inp_cfg = _ap(_SC()).inpainting
+        chosen = _SP.resolve_inpainter_method(
+            inp_cfg.method, allow_fallback=getattr(inp_cfg, "auto_fallback", True))
+        label = {"lama": "LaMa", "lama-simple": "LaMa (simple-lama-inpainting)",
+                 "lama-torch": "LaMa (torch/TorchScript — ใช้ได้บน Python 3.13+)",
+                 "iopaint": "IOPaint", "opencv": "OpenCV (cv2.inpaint)",
+                 "median": "Median fill (คุณภาพต่ำ)"}.get(chosen, chosen)
+        # นับว่า "พร้อม" ถ้าเลือกได้ LaMa จริง (lama -> lama-torch ก็ถือว่าดี)
+        if chosen in ("lama", "lama-simple", "lama-torch"):
+            ok(f"วิธีลบข้อความเดิมที่จะใช้: {label}")
+            if str(inp_cfg.method).lower() == "lama" and chosen == "lama-torch":
+                print("      (ติดตั้ง simple-lama-inpainting ไม่ได้เพราะจำกัด Python <=3.12 "
+                      "— ใช้ torch แทนซึ่งคุณภาพเท่ากัน)")
+        else:
+            warn(f"วิธีลบข้อความเดิมที่จะใช้: {label} (คุณภาพจำกัด)",
+                 "ติดตั้ง LaMa: python scripts/download_weights.py --lama "
+                 "แล้วตั้ง SCANLATION_INPAINT_METHOD=lama-torch (หรือใช้ iopaint)")
+            need("ติดตั้ง LaMa (คุณภาพสูง) สำหรับ Inpainting",
+                 "pip install torch && python scripts/download_weights.py --lama "
+                 "แล้วตั้ง SCANLATION_INPAINT_METHOD=lama-torch")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"ตรวจวิธี inpaint ไม่ได้ ({exc})")
 
     # ---- segmenter ที่จะถูกใช้จริง (sam / fastsam / box / auto) ----
     try:

@@ -170,18 +170,118 @@ class ScanlationPipeline:
                      "box": BoxPromptSegmenter}[name](d)
         return DetectionPipeline(detector, segmenter, d)
 
+    @staticmethod
+    def resolve_inpainter_method(name: str, allow_fallback: bool = True) -> str:
+        """
+        แปลงชื่อวิธี inpaint จาก config ให้เป็นตัวที่ "รันได้จริง" บนเครื่องนี้
+
+            "auto" -> เลือกตัวที่ดีที่สุดที่ติดตั้งไว้ (lama -> iopaint -> opencv -> median)
+            อื่น ๆ -> ตรวจ dependency จริง ถ้าไม่พร้อมและ auto_fallback=True
+                      จะถอยไปใช้ตัวที่รันได้แทน (พร้อมเตือน) เพื่อไม่ให้ pipeline ล้ม
+
+        เหตุผล: `simple-lama-inpainting` กำหนด pillow<10 / numpy<2 จึงติดตั้งไม่ได้
+        บน Python 3.13/3.14 — ต้องมีทางถอยไปใช้ OpenCV/Median ให้รันต่อได้
+        """
+        import importlib.util
+
+        def has(mod: str) -> bool:
+            try:
+                return importlib.util.find_spec(mod) is not None
+            except (ImportError, ValueError):
+                return False
+
+        needs = {
+            "lama": None,            # เป็น "กลุ่มนามธรรม" -> แก้ด้านล่าง (simple หรือ torch)
+            "lama-simple": "simple_lama_inpainting",
+            "lama-torch": "torch",
+            "iopaint": "iopaint",
+            "opencv": "cv2",
+            "median": None,          # ไม่ต้องพึ่งอะไร (ใช้ numpy ล้วน)
+        }
+        name = (name or "auto").strip().lower()
+
+        # ชื่อโมเดลของ IOPaint ที่รู้จัก (ใช้เมื่อผู้ใช้ตั้ง method เป็นชื่อโมเดลโดยตรง)
+        iopaint_models = {"mat", "migan", "zits", "ldm", "manga", "fcf", "cv2"}
+
+        # ตัวช่วยเลือก LaMa ที่ "ใช้ได้จริง": ถ้ามี simple-lama-inpainting ใช้ตัวนั้น
+        # ไม่งั้นถ้ามี torch -> ใช้ lama-torch (โหลด big-lama.pt ตรง ๆ ใช้ได้บน Python 3.13+)
+        def pick_lama() -> str:
+            if has("simple_lama_inpainting"):
+                return "lama-simple"
+            if has("torch"):
+                return "lama-torch"
+            return "median"
+
+        if name == "auto":
+            for cand in ("lama", "iopaint", "opencv", "median"):
+                if cand == "lama":
+                    return pick_lama()
+                need = needs[cand]
+                if need is None or has(need):
+                    return cand
+            return "median"
+
+        if name == "lama":
+            return pick_lama()
+
+        # ตั้ง method เป็นชื่อโมเดลของ IOPaint โดยตรง (เช่น mat/migan/zits)
+        if name in iopaint_models:
+            if has("iopaint"):
+                return name
+            if allow_fallback:
+                log.warning("inpainting.method '%s' ต้องใช้ IOPaint (ยังไม่ติดตั้ง) — "
+                            "ถอยไปใช้ '%s'", name, pick_lama())
+                return pick_lama()
+            raise RuntimeError("ต้องติดตั้ง IOPaint: pip install iopaint")
+
+        # ตรวจก่อนว่าเป็นชื่อที่ "รู้จัก" ไหม — ถ้าไม่ ให้ error ชัดเจน (ไม่ส่งต่อไป IOPaint มั่ว ๆ)
+        need = needs.get(name)
+        if need is None and name not in needs:
+            raise ValueError(
+                f"ไม่รู้จัก inpainting.method '{name}'\n"
+                f"  ที่รองรับ: lama | lama-torch | lama-simple | iopaint | opencv | median | auto\n"
+                f"  (หรือชื่อโมเดลของ IOPaint เช่น: {', '.join(sorted(iopaint_models))})"
+            )
+
+        if need is not None and not has(need):
+            if allow_fallback:
+                logger_name = "median" if name in ("lama-simple", "lama-torch", "iopaint") else "opencv"
+                hint = ""
+                if name == "lama-torch":
+                    hint = "  (ติดตั้ง torch: pip install torch torchvision)"
+                elif name == "lama-simple":
+                    hint = "  (simple-lama-inpainting ต้องใช้ Python <=3.12)"
+                log.warning(
+                    "inpainting.method '%s' ยังไม่พร้อม (ขาดโมดูล '%s') — "
+                    "ถอยไปใช้ '%s' แทนชั่วคราว%s",
+                    name, need, logger_name, hint,
+                )
+                return logger_name
+            raise RuntimeError(
+                f"inpainting.method '{name}' ยังไม่พร้อม — ขาดโมดูล '{need}'\n"
+                f"  ติดตั้งด้วย: pip install torch && python scripts/download_weights.py --lama\n"
+                f"  หรือใช้: SCANLATION_INPAINT_METHOD=median"
+            )
+        return name
+
     def _default_inpainter(self) -> Inpainter:
         i = self.cfg.inpainting
-        if i.method == "lama":
+        method = self.resolve_inpainter_method(i.method,
+                                               allow_fallback=getattr(i, "auto_fallback", True))
+        if method in ("lama", "lama-simple"):
             return LamaInpainter(i)
-        if i.method == "opencv":
+        if method == "lama-torch":
+            from .inpainting.lama_torch_inpainter import LamaTorchInpainter
+            return LamaTorchInpainter(i)
+        if method == "opencv":
             from .inpainting.opencv_inpainter import OpenCVInpainter
             return OpenCVInpainter(i)
-        if i.method == "median":
+        if method == "median":
             from .inpainting.opencv_inpainter import MedianFillInpainter
             return MedianFillInpainter(i)
+        # ที่เหลือ = iopaint (รองรับชื่อโมเดลอื่น ๆ เช่น mat/migan)
         from .inpainting.lama_inpainter import IOPaintLaMaInpainter
-        return IOPaintLaMaInpainter(i, model_name=i.method)
+        return IOPaintLaMaInpainter(i, model_name=method)
 
     def _default_translator(self) -> Translator:
         return LLMTranslator(self.cfg.translation)

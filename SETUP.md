@@ -198,6 +198,30 @@ python scripts/download_weights.py --model vit_b
 echo "SCANLATION_SEGMENTER=box" >> .env
 ```
 
+### 3.7 (ทางเลือก) LaMa สำหรับ Inpainting — ไม่ต้องมีก็รันได้
+
+ขั้นลบข้อความเดิมจะเลือกวิธีให้อัตโนมัติ ถ้ายังไม่ติดตั้ง LaMa ระบบจะถอยให้เอง
+
+> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12** (ตรึง `pillow<10`/`numpy<2`)
+> ถ้าใช้ Python 3.13+ (เช่น macOS) ให้ใช้ **`lama-torch`** ที่โหลดโมเดล TorchScript ตรง ๆ
+
+```bash
+# ✅ ทางที่แนะนำเมื่อใช้ Python 3.13+ (ได้คุณภาพ LaMa จริง)
+pip install torch torchvision          # ถ้ายังไม่มี
+python scripts/download_weights.py --lama   # โหลด big-lama.pt (~205 MB)
+echo "SCANLATION_INPAINT_METHOD=lama-torch" >> .env
+#  หรือปล่อย method=lama ไว้ก็ได้ (ระบบจะเลือก lama-torch ให้เองเมื่อไม่มี simple)
+
+# ทางอื่น
+pip install -r requirements-ml.txt     # เฉพาะ Python 3.9–3.12
+pip install iopaint && echo "SCANLATION_INPAINT_METHOD=iopaint" >> .env
+echo "SCANLATION_INPAINT_METHOD=median" >> .env   # เร็วสุด แต่คุณภาพต่ำ (ชั่วคราว)
+```
+
+> ℹ️ **ความเร็ว**: GPU (CUDA) / Apple Silicon (MPS) เร็วมาก (~1–3 วิ/หน้า)
+> ส่วน CPU จะช้ากว่ามาก — ระบบเลือกอุปกรณ์ให้อัตโนมัติ (cuda → mps → cpu)
+> ถ้าอยากเลือกเอง: `SCANLATION_INPAINT_DEVICE=mps` (macOS) หรือ `cpu`
+
 ---
 
 ## 4) ตั้งค่าด้วยไฟล์ `.env` (แนะนำ — ตั้งได้ทุกตัว)
@@ -430,8 +454,10 @@ python -m scanlation.cli preview                               # http://127.0.0.
 | หน้า preview ขึ้น `/media/... 500 Internal Server Error` | (แก้แล้ว) Flask ตีความ relative path เทียบ `app.root_path` ไม่ใช่ cwd | อัปเดตโค้ดล่าสุด (ใช้ absolute path ใน `send_file`) |
 | สระ/วรรณยุกต์ไทยวางผิดตำแหน่ง | Pillow ไม่มี libraqm | `python -c "from PIL import features; print(features.check('raqm'))"` ต้องเป็น `True` → ติดตั้ง libraqm (ข้อ 3.5) |
 | `ModuleNotFoundError: segment_anything` | ยังไม่ติดตั้ง SAM | `pip install -r requirements-ml.txt` **หรือ** ตั้ง `SCANLATION_SEGMENTER=box` ใน `.env` เพื่อรันโดยไม่ต้องใช้ SAM |
-| `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` |
-| `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `cfg.inpainting.method = "median"` ชั่วคราว |
+| `ModuleNotFoundError: simple_lama_inpainting` | ยังไม่ติดตั้ง LaMa | `pip install -r requirements-ml.txt` หรือใช้ `SCANLATION_INPAINT_METHOD=median` |
+| `Failed to build 'pillow'` ตอนลง `simple-lama-inpainting` | แพ็กเกจตรึง `pillow<10`/`numpy<2` (ใช้ได้เฉพาะ Python 3.9–3.12) | ตั้ง `SCANLATION_INPAINT_METHOD=median` (หรือ `opencv`/`iopaint`) — หรือใช้ venv Python 3.12 |
+| `ERROR: ... simple-lama-inpainting` บน Python 3.13+ | เหตุผลเดียวกับข้างบน | แนะนำ `pip install iopaint` แล้วตั้ง `SCANLATION_INPAINT_METHOD=iopaint` |
+| `ต้องติดตั้ง LaMa: pip install simple-lama-inpainting` | เรียกสเตจ inpaint โดยยังไม่มี LaMa | ติดตั้งตามด้านบน หรือใช้ `SCANLATION_INPAINT_METHOD=median` ชั่วคราว |
 | SAM ช้ามากตอนเริ่มหน้าแรก | SAM encode ภาพทั้งหน้า | ใช้ `vit_b` หรือเปลี่ยนเป็น `FastSAMSegmenter` |
 | `CUDA out of memory` | GPU ไม่พอ | ตั้ง `sam_device = "cpu"` หรือใช้ `vit_b` |
 | `401 / authentication_error` | API key ผิด/ไม่ตั้ง | ตั้งใน `.env` (ดูข้อ 4) แล้วรัน `python scripts/check_env.py` |

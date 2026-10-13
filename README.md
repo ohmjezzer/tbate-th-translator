@@ -357,6 +357,35 @@ SCANLATION_SEGMENTER=box
 - `opencv_inpainter.py` — `OpenCVInpainter` (fallback เดิม) และ `MedianFillInpainter`
   (เร็วสุด เหมาะบอลลูนสีพื้นเรียบ)
 
+#### เลือกวิธีลบข้อความเดิม (inpainting)
+ตั้งผ่าน `.env` หรือ config — **ไม่ต้องแก้โค้ด**:
+
+| ค่า | ต้องติดตั้ง | คำอธิบาย |
+|---|---|---|
+| `lama` (ค่าดีฟอลต์) | — | เลือก LaMa ที่ใช้ได้ให้เอง: `simple-lama` ถ้ามี → ไม่มีก็ใช้ `lama-torch` |
+| `lama-torch` | `pip install torch` | **โหลด `big-lama.pt` ตรง ๆ ผ่าน `torch.jit`** — ใช้ได้บน Python 3.13+ (เลี่ยง `pillow<10`) |
+| `iopaint` | `pip install iopaint` | ผ่าน IOPaint |
+| `opencv` | ไม่ต้องติดตั้งเพิ่ม | `cv2.inpaint` — คุณภาพกลาง ๆ |
+| `median` | ไม่ต้องติดตั้งเพิ่ม | ถมสี median — เร็วแต่ **คุณภาพต่ำ** (ใช้ชั่วคราว) |
+| `auto` | — | เลือกตัวที่ดีสุดที่รันได้ (lama → iopaint → opencv → median) |
+
+```dotenv
+# ใช้ LaMa จริงบน Python 3.13+ (เช่น macOS + Python 3.14)
+SCANLATION_INPAINT_METHOD=lama-torch
+SCANLATION_LAMA_AUTO_DOWNLOAD=true      # ดาวน์โหลด big-lama.pt (~205 MB) ให้อัตโนมัติ
+```
+```bash
+# หรือดาวน์โหลดโมเดลเองล่วงหน้า
+python scripts/download_weights.py --lama
+```
+
+> ⚠️ **`simple-lama-inpainting` ติดตั้งได้เฉพาะ Python 3.9–3.12** (ตรึง `pillow<10`/`numpy<2`)
+> ถ้าใช้ Python 3.13+ ให้ใช้ **`lama-torch`** (โหลดโมเดล TorchScript ตรง ๆ — คุณภาพเท่า LaMa ต้นฉบับ)
+> ระบบจะเลือกให้อัตโนมัติเมื่อ `method=lama`
+>
+> ℹ️ **ความเร็ว**: บน GPU (CUDA) หรือ Apple Silicon (MPS) เร็วมาก (~1-3 วิ/หน้า)
+> บน CPU จะช้ากว่ามาก — ระบบถอยอัตโนมัติ: cuda → mps → cpu
+
 ### [3] Translation — `scanlation/translation/`
 
 - `glossary.py` — นิยาม **CharacterProfile** (สรรพนาม/น้ำเสียง/วิธีเรียกคนอื่น),
