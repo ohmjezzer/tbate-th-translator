@@ -105,6 +105,27 @@ def cmd_list_sources(args) -> int:
     return 0
 
 
+def cmd_preview(args) -> int:
+    """
+    เปิดหน้าเว็บ Preview/แก้ไขผลการแปล (รันในเครื่อง)
+
+        python -m scanlation.cli preview                 # http://127.0.0.1:8000
+        python -m scanlation.cli preview --port 8080
+        python -m scanlation.cli preview --config config/config.json
+    """
+    cfg = _load_config(args.config)
+    try:
+        from .web import run_server
+    except ImportError as exc:  # pragma: no cover
+        print("ต้องติดตั้ง Flask ก่อน: pip install -r requirements-web.txt", file=sys.stderr)
+        return 2
+    try:
+        run_server(host=args.host, port=args.port, cfg=cfg, debug=args.debug)
+    except KeyboardInterrupt:
+        print("\nปิดเซิร์ฟเวอร์")
+    return 0
+
+
 def cmd_detect(args) -> int:
     """ทดสอบเฉพาะสเตจ Detection & Masking (บันทึก mask ไว้ตรวจด้วยตา)"""
     import numpy as np
@@ -276,6 +297,12 @@ def build_parser() -> argparse.ArgumentParser:
     pd = sub.add_parser("detect", help="ทดสอบสเตจตรวจจับ")
     pd.add_argument("pages", nargs="*")
     pd.set_defaults(func=cmd_detect)
+
+    ppv = sub.add_parser("preview", help="เปิดหน้าเว็บ preview/แก้ไขผลการแปล")
+    ppv.add_argument("--host", default="127.0.0.1")
+    ppv.add_argument("--port", type=int, default=8000)
+    ppv.add_argument("--debug", action="store_true", help="โหมด debug ของ Flask (auto-reload)")
+    ppv.set_defaults(func=cmd_preview)
 
     pp = sub.add_parser("show-prompt", help="พิมพ์ system prompt สำหรับ LLM")
     pp.set_defaults(func=cmd_show_prompt)

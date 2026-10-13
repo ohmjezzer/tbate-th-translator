@@ -377,6 +377,13 @@ python -m scanlation.cli run 1 2      # แปลเฉพาะหน้า 1, 
 ```
 ควรได้ `out/page-0001.png`, `out/page-0002.png`
 
+### 6.5 เปิดหน้า Preview/แก้ไขผลการแปล (ไม่ต้องมี GPU)
+```bash
+pip install -r requirements-web.txt       # Flask (เบา)
+python -m scanlation.cli preview          # → http://127.0.0.1:8000
+```
+ควรเห็นหน้าเว็บแสดงผลการแปล เลือกหน้าได้ ลากย้าย/ปรับขนาดข้อความ และเรนเดอร์ใหม่ได้
+
 ---
 
 ## 7) คำสั่งสรุปแบบเร็ว (Cheat Sheet)
@@ -406,6 +413,10 @@ python -m scanlation.cli download "<chapter_url>" --limit 3   # [0] ดาวน
 python -m scanlation.cli run                                   # [1-4] แปล + จัดวาง
 python -m scanlation.cli detect 1                              # ทดสอบ SAM + เซฟ mask
 python -m scanlation.cli sources                               # ดู source ที่รองรับ
+
+# --- Preview/แก้ไขผลการแปล (frontend) ---
+pip install -r requirements-web.txt
+python -m scanlation.cli preview                               # http://127.0.0.1:8000
 ```
 
 ---
@@ -425,6 +436,7 @@ python -m scanlation.cli sources                               # ดู source �
 | `cannot write mode RGBA as JPEG` | บันทึกภาพ RGBA เป็น JPEG | โปรเจกต์จัดการให้แล้ว (แปลงเป็น RGB) — ถ้าเจอ ให้อัปเดต Pillow |
 | ดาวน์โหลดได้ไม่ครบทุกหน้า | เว็บเปลี่ยนโครงสร้าง / หน้าโดนล็อก | ดู `.scanlation/download_manifest.json` ว่า URL ไหนล้มเหลว; ปรับ `source_regex` หรือเพิ่ม cookie |
 | `pip install segment-anything` ค้าง/ล้มเหลว | ต้องมี git + คอมไพล์ | ติดตั้ง git ก่อน; ถ้ามี GPU ให้ลง torch เรียบร้อยก่อน |
+| `ModuleNotFoundError: flask` | ยังไม่ติดตั้ง Flask (โหมด preview) | `pip install -r requirements-web.txt` |
 | Tesseract ไม่พบ | ไม่ได้ติดตั้งโปรแกรม | `sudo apt install tesseract-ocr` (หรือ `brew install tesseract`) |
 
 ---

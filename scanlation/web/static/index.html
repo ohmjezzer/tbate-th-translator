@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scanlation Preview — ตรวจ/แก้ผลการแปล</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🖼 Scanlation <b>Preview</b></div>
+    <div class="controls">
+      <label>มุมมองภาพ:
+        <select id="viewSelect">
+          <option value="out">ผลลัพธ์ (out)</option>
+          <option value="cleaned">หลังลบข้อความ (cleaned)</option>
+          <option value="orig">ต้นฉบับ (orig)</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="showOverlay" checked /> แสดงกรอบแก้ไข</label>
+      <button id="btnSave" class="btn">💾 บันทึก</button>
+      <button id="btnRender" class="btn primary">⚡ บันทึก &amp; เรนเดอร์ใหม่</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- แถบรายชื่อหน้า -->
+    <aside class="sidebar pages">
+      <h3>หน้า</h3>
+      <ul id="pageList"></ul>
+    </aside>
+
+    <!-- พื้นที่แสดงภาพ + overlay -->
+    <section class="stage">
+      <div class="stage-inner" id="stageInner">
+        <img id="pageImage" alt="page" />
+        <div id="overlay" class="overlay"></div>
+      </div>
+      <div class="hint" id="hint">เลือกหน้าจากด้านซ้ายเพื่อเริ่มแก้ไข</div>
+    </section>
+
+    <!-- แผงแก้ไขบอลลูนที่เลือก -->
+    <aside class="sidebar editor" id="editor">
+      <h3>แก้ไขบอลลูน</h3>
+      <div id="bubbleList" class="bubble-list"></div>
+      <div id="editPanel" class="edit-panel hidden">
+        <div class="row"><span class="tag" id="selUid"></span>
+          <button class="btn tiny" id="btnReset">↺ รีเซ็ต</button></div>
+        <label>คำแปล (แก้ได้)
+          <textarea id="textInput" rows="4"></textarea>
+        </label>
+        <label>ขนาดฟอนต์: <b id="fontSizeVal">auto</b>
+          <input type="range" id="fontSize" min="8" max="200" value="32" />
+        </label>
+        <div class="row gap">
+          <label class="chk"><input type="radio" name="align" value="center" checked />กลาง</label>
+          <label class="chk"><input type="radio" name="align" value="left" />ซ้าย</label>
+          <label class="chk"><input type="radio" name="align" value="right" />ขวา</label>
+        </div>
+        <label>สีตัวอักษร: <input type="color" id="colorInput" value="#111111" />
+          <label class="chk"><input type="checkbox" id="colorOn" /> ใช้สีนี้</label>
+        </label>
+        <div class="row gap">
+          <button class="btn tiny" id="nudgeL">◀</button>
+          <button class="btn tiny" id="nudgeR">▶</button>
+          <button class="btn tiny" id="nudgeU">▲</button>
+          <button class="btn tiny" id="nudgeD">▼</button>
+          <span class="muted">(ขยับ 2px, กด Shift = 10px)</span>
+        </div>
+        <p class="muted small">ลากกรอบในภาพเพื่อ<b>ย้ายข้อความ</b> · ลากมุมขวาล่างเพื่อ<b>ปรับกรอบ</b></p>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
