@@ -179,7 +179,8 @@ def cmd_detect(args) -> int:
     cfg = _load_config(args.config)
     d = cfg.detection
     # เลือก segmenter ผ่านตัว resolve เดียวกับ pipeline (ไม่ hardcode SAM)
-    name = ScanlationPipeline.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback)
+    name = ScanlationPipeline.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback,
+                                                     detection_cfg=d)
     segmenter = {"sam": SAMSegmenter, "fastsam": FastSAMSegmenter,
                  "box": BoxPromptSegmenter}[name](d)
     det = DetectionPipeline(EasyOCRDetector(d), segmenter, d)

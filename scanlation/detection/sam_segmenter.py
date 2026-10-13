@@ -25,6 +25,7 @@ detection/sam_segmenter.py
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Optional
 
 import cv2
@@ -168,6 +169,28 @@ class SAMSegmenter(BoxPromptSegmenter):
         self._predictor = None
 
     # ---- โหลดโมเดลแบบ lazy ----------------------------------------------
+    @staticmethod
+    def resolve_checkpoint(configured: str) -> Optional[str]:
+        """
+        หาไฟล์ checkpoint ของ SAM ที่ "มีอยู่จริง":
+          1) ถ้า path ที่ตั้งไว้มีไฟล์ -> ใช้ตัวนั้น
+          2) ถ้าไม่มี -> ค้นหาไฟล์ sam_*.pth ในโฟลเดอร์เดียวกัน (เช่นผู้ใช้โหลด vit_b
+             แต่ตั้งค่าเป็น vit_h) -> ใช้ตัวที่เจอ (variant อาจต่างจากที่ตั้ง)
+          3) ไม่เจอเลย -> คืน None
+
+        คืนค่า: path (str) ของ checkpoint ที่ใช้ได้ หรือ None
+        """
+        p = Path(configured)
+        if p.is_file():
+            return str(p)
+        # ค้นหา sam_*.pth ในโฟลเดอร์ของมัน (ถ้ามี) และใน weights/
+        for folder in {p.parent, Path("weights")}:
+            if folder and folder.is_dir():
+                found = sorted(folder.glob("sam_*.pth"))
+                if found:
+                    return str(found[0])
+        return None
+
     def _load_model(self):
         if self._model is not None:
             return self._model
@@ -189,8 +212,21 @@ class SAMSegmenter(BoxPromptSegmenter):
         if mtype not in sam_model_registry:  # pragma: no cover
             raise ValueError(f"ไม่รู้จัก sam_model_type '{mtype}' (ต้องเป็น vit_h/vit_l/vit_b)")
 
-        log.info("กำลังโหลด SAM (%s) จาก %s ...", mtype, self.cfg.sam_checkpoint)
-        sam = sam_model_registry[mtype](checkpoint=self.cfg.sam_checkpoint)
+        # --- ตรวจว่าไฟล์ checkpoint มีจริงไหม (ก่อนพยายามโหลด) ---
+        ckpt = self.resolve_checkpoint(self.cfg.sam_checkpoint)
+        if ckpt is None:
+            raise RuntimeError(
+                f"ไม่พบไฟล์โมเดล SAM: '{self.cfg.sam_checkpoint}'\n"
+                f"  ดาวน์โหลด checkpoint ด้วยคำสั่ง:\n"
+                f"      python scripts/download_weights.py --model {mtype}\n"
+                f"  (หรือใช้ตัวที่ไม่ต้องมี checkpoint: SCANLATION_SEGMENTER=box)"
+            )
+        if ckpt != self.cfg.sam_checkpoint:
+            log.warning("ไม่พบ '%s' แต่พบ '%s' — ใช้ไฟล์ที่พบแทน",
+                        self.cfg.sam_checkpoint, ckpt)
+
+        log.info("กำลังโหลด SAM (%s) จาก %s ...", mtype, ckpt)
+        sam = sam_model_registry[mtype](checkpoint=ckpt)
         sam.to(device=self.cfg.sam_device)
         self._model = sam
         return sam
