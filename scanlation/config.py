@@ -42,6 +42,14 @@ class DetectionConfig:
     ocr_min_confidence: float = 0.40     # กรองคำที่มั่นใจต่ำ
     merge_gap: int = 16                  # ระยะห่างสูงสุด (px) ที่จัดว่าเป็นบอลลูนเดียวกัน
 
+    # --- Segmenter (ตัวตัดขอบเขตบอลลูน) ---
+    #   "auto"   = เลือกให้อัตโนมัติ (sam ถ้าติดตั้งไว้ -> fastsam -> box) [แนะนำ]
+    #   "sam"    = Segment Anything Model (คุณภาพดีสุด ต้องติดตั้ง segment-anything + weights)
+    #   "fastsam"= FastSAM (เร็ว/เบา ต้องติดตั้ง ultralytics)
+    #   "box"    = ใช้กรอบสี่เหลี่ยมจาก OCR (ไม่ต้องติดตั้งอะไรเพิ่ม — รันได้ทันที)
+    segmenter: str = "auto"
+    auto_fallback: bool = True           # ถ้าเลือก segmenter ที่ยังไม่พร้อม ให้ถอยไปใช้ตัวที่รันได้โดยไม่ล้ม
+
     # --- SAM (Segment Anything Model) ---
     sam_model_type: str = "vit_h"        # vit_h | vit_l | vit_b  (หรือ mobile_sam)
     sam_checkpoint: str = "weights/sam_vit_h_4b8939.pth"
@@ -71,12 +79,14 @@ class InpaintingConfig:
 # ---------------------------------------------------------------------------
 @dataclass
 class TranslationConfig:
-    backend: str = "anthropic"           # "anthropic" | "openai"
-    model: str = "claude-3-5-sonnet-latest"  # แนะนำ "gpt-4o" สำหรับฝั่ง OpenAI
+    # ค่าดีฟอลต์ตั้งไว้เป็น "ผู้ให้บริการฟรี" เพื่อให้เริ่มใช้งานได้ทันทีโดยไม่ต้องมี
+    # โมเดล/บัตรเครดิตของตัวเอง (เปลี่ยนเป็น claude/gpt-4o ได้เมื่อพร้อม)
+    backend: str = "gemini"                     # ผู้ให้บริการฟรี: gemini|groq|openrouter|cerebras|mistral|together|github|ollama
+    model: str = "gemini-2.0-flash"             # โมเดลฟรีที่แนะนำ (ดู: python -m scanlation.cli setup --list)
     temperature: float = 0.3
     max_tokens: int = 4096
     target_lang: str = "Thai"
-    base_url: str = ""                   # endpoint ทางเลือก (OpenRouter/Groq/DeepSeek/self-host)
+    base_url: str = ""                          # endpoint ทางเลือก (ปกติไม่ต้องตั้ง — ระบบรู้จักผู้ให้บริการให้แล้ว)
     glossary_path: str = "config/glossary.json"
     characters_path: str = "config/characters.json"
     cache_path: str = ".scanlation/translation_cache.json"

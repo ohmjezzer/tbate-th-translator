@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import importlib
 import os
+import platform
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,6 +28,84 @@ R = "\033[91m" if _TTY else ""
 Y = "\033[93m" if _TTY else ""
 B = "\033[1m" if _TTY else ""
 X = "\033[0m" if _TTY else ""
+
+# รายการ "สิ่งที่ต้องแก้ก่อนใช้งานได้จริง" (ใช้สรุปท้ายรายงาน)
+_next_steps: list[tuple[str, str]] = []      # (ปัญหา, คำสั่ง/วิธีแก้)
+
+
+# ---------------------------------------------------------------------------
+# ตรวจจับ OS / ตัวจัดการแพ็กเกจ เพื่อให้คำสั่งติดตั้งตรงกับเครื่องจริง
+# ---------------------------------------------------------------------------
+def detect_platform() -> dict:
+    system = platform.system().lower()          # linux / darwin / windows
+    distro = ""
+    if system == "linux":
+        try:
+            txt = Path("/etc/os-release").read_text(encoding="utf-8", errors="ignore")
+            for line in txt.splitlines():
+                if line.startswith("ID="):
+                    distro = line.split("=", 1)[1].strip().strip('"').lower()
+                    break
+        except Exception:  # noqa: BLE001
+            distro = ""
+    has = lambda *cmds: any(shutil.which(c) for c in cmds)  # noqa: E731
+    return {
+        "system": system,
+        "distro": distro,
+        "conda": has("conda") or bool(os.environ.get("CONDA_DEFAULT_ENV")),
+        "apt": has("apt-get", "apt") and system == "linux",
+        "dnf": has("dnf") and system == "linux",
+        "pacman": has("pacman") and system == "linux",
+        "brew": has("brew") and system == "darwin",
+        "win": system == "windows",
+    }
+
+
+PLAT = detect_platform()
+
+
+def os_label() -> str:
+    if PLAT["win"]:
+        return "Windows"
+    if PLAT["system"] == "darwin":
+        return "macOS"
+    return f"Linux ({PLAT['distro'] or 'ไม่ทราบรุ่น'})"
+
+
+def cmd_libraqm() -> str:
+    """คำสั่งติดตั้ง libraqm ที่ตรงกับเครื่อง + วิธีทำให้ Pillow มองเห็น"""
+    if PLAT["conda"]:
+        return "conda install -c conda-forge pillow   # แล้วเช็ค: python -c \"from PIL import features; print(features.check('raqm'))\""
+    if PLAT["apt"]:
+        return ("sudo apt-get install -y libraqm-dev && "
+                "pip install --force-reinstall --no-cache-dir pillow")
+    if PLAT["dnf"]:
+        return ("sudo dnf install -y libraqm-devel && "
+                "pip install --force-reinstall --no-cache-dir pillow")
+    if PLAT["pacman"]:
+        return ("sudo pacman -S --needed libraqm && "
+                "pip install --force-reinstall --no-cache-dir pillow")
+    if PLAT["brew"]:
+        return ("brew install libraqm && "
+                "pip install --force-reinstall --no-cache-dir pillow")
+    if PLAT["win"]:
+        return "pip install --upgrade --force-reinstall pillow   # wheel ทางการมี libraqm ในตัว"
+    return "ติดตั้ง libraqm ของระบบ แล้ว pip install --force-reinstall pillow"
+
+
+def cmd_tesseract() -> str:
+    if PLAT["apt"]:
+        return "sudo apt-get install -y tesseract-ocr"
+    if PLAT["dnf"]:
+        return "sudo dnf install -y tesseract"
+    if PLAT["pacman"]:
+        return "sudo pacman -S --needed tesseract"
+    if PLAT["brew"]:
+        return "brew install tesseract"
+    if PLAT["win"]:
+        return "ดาวน์โหลดตัวติดตั้งจาก https://github.com/UB-Mannheim/tesseract/wiki"
+    return "ติดตั้งโปรแกรม tesseract ของระบบ"
+
 
 ok_count = 0
 fail_count = 0
@@ -52,6 +132,11 @@ def warn(msg: str, fix: str = "") -> None:
     print(f"  {Y}!{X} {msg}")
     if fix:
         print(f"      {Y}→ {fix}{X}")
+
+
+def need(msg: str, fix: str) -> None:
+    """รายการที่ 'จำเป็นต่อการรันเต็มระบบ' — เก็บไว้สรุปเป็นขั้นตอนถัดไป"""
+    _next_steps.append((msg, fix))
 
 
 def section(title: str) -> None:
@@ -89,6 +174,7 @@ def main() -> int:
 
     print(f"{B}════ Scanlation Engine — ตรวจสภาพแวดล้อม ════{X}")
     print(f"python : {sys.version.split()[0]}  ({sys.executable})")
+    print(f"ระบบ   : {os_label()}")
 
     # ------------------------------------------------------- 0) .env / env vars
     section("0) ไฟล์ .env และ environment variable")
@@ -155,8 +241,8 @@ def main() -> int:
         if features.check("raqm"):
             ok("Pillow มี libraqm — จัดสระ/วรรณยุกต์ไทยได้ถูกต้อง")
         else:
-            fail("Pillow ไม่มี libraqm — ข้อความไทยจะวางสระ/วรรณยุกต์ผิด",
-                 "Linux: sudo apt install libraqm-dev ; Conda: conda install -c conda-forge pillow")
+            fail("Pillow ไม่มี libraqm — ข้อความไทยจะวางสระ/วรรณยุกต์ผิด", cmd_libraqm())
+            need("libraqm (จัดสระ/วรรณยุกต์ไทย)", cmd_libraqm())
     except Exception as exc:  # noqa: BLE001
         fail(f"ตรวจ raqm ไม่ได้ ({exc})", "อัปเกรด Pillow: pip install -U pillow")
 
@@ -200,17 +286,48 @@ def main() -> int:
     check_import("openai", "openai SDK (GPT)", required=False,
                  fix="pip install -r requirements.txt")
 
+    # เก็บเป็นขั้นตอนถัดไป (ต้องมีถ้าจะรันเต็มระบบด้วย SAM + LaMa)
+    if "segment_anything" not in sys.modules:
+        need("ติดตั้ง SAM (segment-anything) + LaMa สำหรับ Detection/Inpainting",
+             "pip install -r requirements-ml.txt")
+    if "simple_lama_inpainting" not in sys.modules:
+        need("ติดตั้ง LaMa (simple-lama-inpainting)",
+             "pip install -r requirements-ml.txt")
+
+    # ---- segmenter ที่จะถูกใช้จริง (sam / fastsam / box / auto) ----
+    try:
+        from scanlation.config import ScanlationConfig
+        from scanlation.env import apply_env
+        from scanlation.pipeline import ScanlationPipeline
+
+        seg_cfg = apply_env(ScanlationConfig()).detection
+        chosen = ScanlationPipeline.resolve_segmenter_name(
+            seg_cfg.segmenter, allow_fallback=True)
+        label = {"sam": "SAM (คุณภาพดีสุด)", "fastsam": "FastSAM (เร็ว/เบา)",
+                 "box": "Box (กรอบสี่เหลี่ยม — ไม่ต้องติดตั้งเพิ่ม)"}[chosen]
+        if chosen == "sam":
+            ok(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}")
+        elif seg_cfg.segmenter == "auto":
+            warn(f"segmenter=auto -> จะใช้ {label}",
+                 "ติดตั้ง SAM เพื่อคุณภาพสูงสุด: pip install -r requirements-ml.txt")
+        else:
+            warn(f"ตัวตัดขอบเขตบอลลูนที่จะใช้: {label}",
+                 "สลับด้วย SCANLATION_SEGMENTER=sam|fastsam|box ใน .env")
+    except Exception as exc:  # noqa: BLE001
+        warn(f"ตรวจ segmenter ไม่ได้ ({exc})")
+
     # ------------------------------------------------- 3.1) Tesseract (ระบบ)
-    section("3.1) Tesseract OCR (ถ้าเลือก ocr_engine=tesseract)")
+    section("3.1) Tesseract OCR (ใช้เฉพาะเมื่อ ocr_engine=tesseract — ปกติไม่ต้องมี)")
     try:
         import pytesseract
         pytesseract.get_tesseract_version()
         ok("Tesseract ทำงานได้")
     except ImportError:
-        warn("ไม่มี pytesseract", "pip install pytesseract")
+        warn("ไม่มี pytesseract (ข้ามได้ถ้าใช้ easyocr ที่เป็นค่าดีฟอลต์)",
+             "pip install pytesseract")
     except Exception:
-        warn("ไม่พบโปรแกรม tesseract ในระบบ",
-             "Ubuntu: sudo apt install tesseract-ocr ; macOS: brew install tesseract")
+        warn("ไม่พบโปรแกรม tesseract ในระบบ (ข้ามได้ถ้าใช้ easyocr)",
+             cmd_tesseract())
 
     # ------------------------------------------------- 4) ไฟล์ในโปรเจกต์
     section("4) ไฟล์ / โฟลเดอร์ที่โปรเจกต์ต้องใช้")
@@ -233,29 +350,64 @@ def main() -> int:
     else:
         warn("ไม่พบไฟล์ weights/sam_*.pth (จำเป็นเมื่อใช้ SAMSegmenter)",
              "python scripts/download_weights.py --model vit_b")
+        need("ดาวน์โหลด checkpoint ของ SAM", "python scripts/download_weights.py --model vit_b")
 
     # ------------------------------------------------- 5) API key
-    section("5) API key ของ LLM (สเตจแปล)")
-    a = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    o = bool(os.environ.get("OPENAI_API_KEY"))
-    if a:
-        ok("ANTHROPIC_API_KEY ตั้งแล้ว (Claude)")
+    section("5) API key ของผู้ให้บริการ AI (สเตจแปล)")
+    from scanlation.config import ScanlationConfig
+    from scanlation.env import apply_env
+    from scanlation.providers import get as get_provider, list_free, api_keys_for
+
+    cfg = apply_env(ScanlationConfig())
+    backend = cfg.translation.backend
+    prov = get_provider(backend)
+    print(f"  backend ปัจจุบัน: {backend}  (โมเดล: {cfg.translation.model})")
+    if prov:
+        tag = "ฟรี" if prov.free else "เสียเงิน"
+        print(f"  ผู้ให้บริการ: {prov.display}  [{tag}]")
+        if prov.signup_url:
+            print(f"      ขอคีย์ที่: {prov.signup_url}")
+
+    keys = api_keys_for(backend)
+    have = [k for k in keys if os.environ.get(k)]
+    if have:
+        ok(f"พบคีย์ของ '{backend}': " + ", ".join(have))
+    elif keys:
+        fix = f"python -m scanlation.cli setup --provider {backend}"
+        fail(f"ยังไม่พบคีย์ของ '{backend}' ({', '.join(keys)})", fix)
+        need(f"ใส่ API key ของ '{backend}' (ขอคีย์ได้ที่ {prov.signup_url if prov else '-'})", fix)
     else:
-        warn("ยังไม่ตั้ง ANTHROPIC_API_KEY", "ดูวิธีตั้งค่าใน SETUP.md หัวข้อ 'ตั้งค่า API key'")
-    if o:
-        ok("OPENAI_API_KEY ตั้งแล้ว (GPT)")
-    else:
-        warn("ยังไม่ตั้ง OPENAI_API_KEY")
-    if not (a or o):
-        warn("ไม่มี API key ใด ๆ — สเตจแปลจะใช้ไม่ได้ (แต่ demo/ดาวน์โหลดยังใช้ได้)")
+        ok("ผู้ให้บริการนี้ไม่ต้องใช้คีย์ (เช่น ollama)")
+
+    # เตือนถ้ามีคีย์ของเจ้าอื่น (อาจตั้ง backend ไม่ตรงกับคีย์ที่มี)
+    from scanlation.providers import CATALOG
+    others = [p.name for p in CATALOG.values()
+              if p.name != backend and any(os.environ.get(k) for k in p.env_keys)]
+    if others and not have:
+        warn("พบคีย์ของผู้ให้บริการอื่น: " + ", ".join(others),
+             "ตั้ง SCANLATION_TRANSLATION_BACKEND ให้ตรงกับคีย์ หรือเปลี่ยนคีย์")
+
+    free_names = ", ".join(p.name for p in list_free())
+    if keys and not have:
+        warn(f"ผู้ให้บริการฟรีที่ใช้ได้: {free_names}",
+             "รัน: python -m scanlation.cli setup --list เพื่อดูวิธีขอคีย์")
 
     # ------------------------------------------------- สรุปผล
     print(f"\n{B}════ สรุป ════{X}")
+    print(f"  ระบบ: {os_label()}  |  python {sys.version.split()[0]}")
     print(f"  ผ่าน {ok_count} | เตือน {warn_count} | ไม่ผ่าน {fail_count}")
+
+    if _next_steps:
+        print(f"\n{B}ขั้นตอนถัดไป (เรียงตามลำดับที่แนะนำ){X}")
+        for i, (what, cmd) in enumerate(_next_steps, 1):
+            print(f"  {i}. {what}")
+            if cmd:
+                print(f"       {G}{cmd}{X}")
+
     if fail_count == 0:
-        print(f"  {G}สภาพแวดล้อมพื้นฐานพร้อมใช้งาน 🎉{X}")
+        print(f"\n  {G}สภาพแวดล้อมพร้อมใช้งาน 🎉{X}")
         return 0
-    print(f"  {R}ยังมีรายการที่ต้องแก้ (ดูข้อ '→' ด้านบน){X}")
+    print(f"\n  {R}ยังมี {fail_count} รายการที่ต้องแก้ (ดู '→' ด้านบน){X}")
     return 1
 
 

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..config import TranslationConfig
+from ..providers import api_style_for, base_url_for, exists as provider_exists, list_free
 from ..schemas import Bubble, Page
 from ..utils.logging_utils import get_logger
 from .base import Translator, TranslationContext
@@ -32,31 +33,10 @@ from .prompts import OUTPUT_SCHEMA, build_system_prompt, build_user_prompt
 
 log = get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# base_url ดีฟอลต์ของผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible
-# (ตั้ง translation.base_url เองเพื่อทับ หรือใช้ endpoint ที่นี่)
-# ---------------------------------------------------------------------------
-_PROVIDER_BASE_URLS: Dict[str, str] = {
-    "openai":     "https://api.openai.com/v1",
-    "deepseek":   "https://api.deepseek.com/v1",
-    "groq":       "https://api.groq.com/openai/v1",
-    "openrouter": "https://openrouter.ai/api/v1",
-    "together":   "https://api.together.xyz/v1",
-    "mistral":    "https://api.mistral.ai/v1",
-    "xai":        "https://api.x.ai/v1",
-    "grok":       "https://api.x.ai/v1",
-    "fireworks":  "https://api.fireworks.ai/inference/v1",
-    "cerebras":   "https://api.cerebras.ai/v1",
-    "perplexity": "https://api.perplexity.ai",
-    "gemini":     "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "google":     "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "ollama":     "http://localhost:11434/v1",
-}
-
 
 def _provider_base_url(backend: str) -> Optional[str]:
-    """คืน base_url ที่เหมาะกับ backend (None = ปล่อยให้ SDK ใช้ค่าดีฟอลต์)"""
-    return _PROVIDER_BASE_URLS.get((backend or "").strip().lower())
+    """คืน base_url ที่เหมาะกับ backend (จากแคตตาล็อกกลาง) หรือ None"""
+    return base_url_for(backend)
 
 
 # ---------------------------------------------------------------------------
@@ -143,14 +123,27 @@ class OpenAIBackend(LLMBackend):
     def _make_client(self, OpenAI):
         """สร้าง client โดยดึง api_key/base_url ให้ตรงกับ backend ที่เลือก"""
         from ..env import resolve_api_key
+        from ..providers import api_keys_for, get as get_provider
 
+        prov = get_provider(self.cfg.backend)
         kwargs: Dict = {}
         base_url = self.cfg.base_url or _provider_base_url(self.cfg.backend)
         if base_url:
             kwargs["base_url"] = base_url
+
         key = resolve_api_key(self.cfg.backend)
         if key:
             kwargs["api_key"] = key
+        elif prov is not None and not prov.env_keys:
+            # ผู้ให้บริการที่ไม่ต้องใช้คีย์ (เช่น ollama ที่รันในเครื่อง)
+            kwargs["api_key"] = "ollama"
+        elif prov is not None and prov.env_keys:
+            raise RuntimeError(
+                f"ไม่พบ API key สำหรับ '{self.cfg.backend}' "
+                f"({', '.join(api_keys_for(self.cfg.backend))}) — "
+                f"ขอคีย์{'ฟรี' if prov.free else ''}ได้ที่ {prov.signup_url} "
+                f"แล้วใส่ใน .env (หรือรัน: python -m scanlation.cli setup --provider {self.cfg.backend})"
+            )
         return OpenAI(**kwargs)
 
     def complete(self, system: str, user: str) -> Dict:
@@ -211,14 +204,17 @@ class LLMTranslator(Translator):
     # ---- สร้าง backend ตาม config ---------------------------------------
     def _default_backend(self) -> LLMBackend:
         name = (self.cfg.backend or "").strip().lower()
-        if name == "anthropic":
+        style = api_style_for(name)
+        if style == "anthropic":
             return AnthropicBackend(self.cfg)
-        # ผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible (openai/deepseek/groq/...)
-        if name in _PROVIDER_BASE_URLS:
+        if provider_exists(name):
+            # ผู้ให้บริการที่ใช้ API แบบ OpenAI-compatible (openai/gemini/groq/deepseek/...)
             return OpenAIBackend(self.cfg)
+        free_names = ", ".join(p.name for p in list_free())
         raise ValueError(
-            f"ไม่รู้จัก backend '{self.cfg.backend}' "
-            f"(รองรับ: anthropic, {', '.join(sorted(_PROVIDER_BASE_URLS))})"
+            f"ไม่รู้จัก backend '{self.cfg.backend}' — "
+            f"ดูรายชื่อทั้งหมด: python -m scanlation.cli setup --list   "
+            f"(ผู้ให้บริการฟรีที่ใช้ได้: {free_names})"
         )
 
     # ---- cache -----------------------------------------------------------

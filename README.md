@@ -115,27 +115,34 @@ requirements.txt / requirements-ml.txt / environment.yml
 > 📖 **คู่มือติดตั้งแบบละเอียดทีละขั้น (Windows/macOS/Linux + GPU/CPU) อยู่ใน [`SETUP.md`](SETUP.md)**
 > และตรวจว่าติดตั้งครบไหมได้ด้วย `python scripts/check_env.py`
 
-### ⚙️ ตั้งค่าทุกอย่างผ่าน `.env` (แนะนำ)
+### ⚙️ ตั้งค่าทุกอย่างผ่าน `.env` — เริ่มจาก AI "ฟรี" ได้ทันที
 
-โปรเจกต์มี **`.env.example`** ที่รวมค่าตั้งได้ทุกตัว (paths / download / detection /
-inpainting / translation / typesetting) **รวม API key ของผู้ให้บริการ AI ทุกเจ้า**:
+โปรเจกต์ตั้งค่าดีฟอลต์เป็น **ผู้ให้บริการ AI ที่มีระดับฟรี** (Gemini) และมี
+**`.env.example`** ที่รวมค่าตั้งได้ทุกตัว (paths / download / detection /
+inpainting / translation / typesetting) **รวม API key ของผู้ให้บริการ AI ทุกเจ้า**
 
 ```bash
-cp .env.example .env      # แล้วเปิดแก้ค่าที่ต้องการ
+# วิธีที่ 1: คัดลอกแล้วใส่คีย์ (เริ่มจาก Gemini ฟรี)
+cp .env.example .env      # แล้วใส่ GEMINI_API_KEY=... (ขอฟรี: https://aistudio.google.com/app/apikey)
+
+# วิธีที่ 2: ให้ระบบสร้าง .env ให้
+python -m scanlation.cli setup --free            # ใช้ Gemini (แนะนำ)
+python -m scanlation.cli setup --provider groq   # หรือเลือกเจ้า อื่น
+python -m scanlation.cli setup --list            # ดูผู้ให้บริการทั้งหมด
 ```
 
+**ผู้ให้บริการฟรีที่รองรับ** (ไม่ต้องใช้บัตรเครดิต): `gemini`, `groq`, `openrouter`,
+`cerebras`, `mistral`, `together`, `github`, `ollama` (รันในเครื่อง)
+**ระดับเสียเงิน** (คุณภาพสูงสุด): `anthropic`, `openai`, `deepseek`, `xai`, `perplexity`, `cohere`, `azure`, `fireworks`
+
+สลับผู้ให้บริการทำได้แค่แก้ 2 บรรทัดใน `.env` (โค้ดไม่ต้องแตะ):
+```dotenv
+SCANLATION_TRANSLATION_BACKEND=groq
+SCANLATION_TRANSLATION_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=gsk_...
+```
 ค่าทุกตัวโหลดจาก `.env` อัตโนมัติ โดยมีลำดับความสำคัญ:
 `env ในเชลล์ > ไฟล์ .env > config/config.json > ค่าดีฟอลต์`
-
-ตัวอย่าง `.env` ขั้นต่ำ:
-```dotenv
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
-SCANLATION_TRANSLATION_BACKEND=anthropic
-SCANLATION_PROFILE=gpu            # ทางลัดตั้ง CPU/GPU ให้ทั้งระบบ
-```
-> รองรับผู้ให้บริการ: Anthropic, OpenAI, Azure, Gemini, DeepSeek, Groq, Mistral,
-> OpenRouter, Together, xAI, Perplexity, Cohere, Fireworks, Cerebras, Hugging Face, Replicate
-> — ตั้ง `SCANLATION_TRANSLATION_BACKEND` + key ให้ตรงคู่กัน
 
 ### ทางเลือก A: venv (แนะนำสำหรับเครื่องเดียว)
 
@@ -281,7 +288,7 @@ cfg.download.source_regex = r"https://cdn\.[^\"']+\.(webp|jpg|png)"
 ### [1] Detection & Masking — `scanlation/detection/`
 
 - `ocr_detector.py` → อ่านข้อความ (`EasyOCRDetector` / `TesseractDetector`)
-- `sam_segmenter.py` → จัดกลุ่มบรรทัดให้เป็นบอลลูน แล้วใช้ **SAM** ตัด mask
+- `sam_segmenter.py` → จัดกลุ่มบรรทัดให้เป็นบอลลูน แล้วตัด mask
   - `SAMSegmenter` — ใช้ `segment_anything` (Meta) เป็นค่าเริ่มต้น
     prompt = กรอบข้อความ, เลือก mask ที่ดีสุด, ขยายผลด้วย SAM2/MobileSAM ได้
   - `FastSAMSegmenter` — ทางเลือกที่เบากว่า (ultralytics, รันบน CPU ได้)
@@ -289,6 +296,23 @@ cfg.download.source_regex = r"https://cdn\.[^\"']+\.(webp|jpg|png)"
   - จำแนกประเภทกล่อง: `speech` / `narration` / `sfx` ด้วย heuristic (ความสว่าง + ทรง)
 - **ทำไม SAM**: ให้ mask ที่แนบตามรูปทรงบอลลูนจริง → ขั้น inpaint ลบได้เฉพาะตัวอักษร
   โดยไม่ทำลายเส้นขอบบอลลูน
+
+#### เลือกตัวตัดขอบเขตบอลลูน (segmenter)
+ตั้งผ่าน `.env` หรือ config — **ไม่ต้องแก้โค้ด**:
+
+| ค่า | ต้องติดตั้ง | คำอธิบาย |
+|---|---|---|
+| `auto` (ค่าดีฟอลต์) | — | เลือกให้อัตโนมัติ: SAM ถ้ามี → FastSAM → Box |
+| `sam` | `pip install -r requirements-ml.txt` | คุณภาพสูงสุด (ต้องมี weights) |
+| `fastsam` | `pip install -r requirements-ml.txt` | เร็ว/เบา รัน CPU ได้ |
+| `box` | ไม่ต้องติดตั้งอะไร | ใช้กรอบสี่เหลี่ยมจาก OCR — **รันได้ทันที** |
+
+```dotenv
+# ตัวอย่าง: อยากรันทันทีโดยยังไม่ติดตั้ง SAM
+SCANLATION_SEGMENTER=box
+```
+> ถ้าตั้ง `sam`/`fastsam` ไว้แต่ยังไม่ติดตั้ง โปรแกรมจะ **ถอยไปใช้ `box` ให้เอง**
+> (พร้อมคำเตือน) เพื่อไม่ให้ pipeline ล้ม — ปิดได้ด้วย `SCANLATION_AUTO_FALLBACK=false`
 
 ### [2] Inpainting — `scanlation/inpainting/`
 

@@ -30,6 +30,8 @@
     "ocr_langs": ["en"],
     "ocr_min_confidence": 0.4,
     "merge_gap": 16,
+    "segmenter": "auto",
+    "auto_fallback": true,
     "sam_model_type": "vit_h",
     "sam_checkpoint": "weights/sam_vit_h_4b8939.pth",
     "sam_device": "cuda",
@@ -48,8 +50,8 @@
     "pad_to_multiple": 8
   },
   "translation": {
-    "backend": "anthropic",
-    "model": "claude-3-5-sonnet-latest",
+    "backend": "gemini",
+    "model": "gemini-2.0-flash",
     "temperature": 0.3,
     "max_tokens": 4096,
     "target_lang": "Thai",

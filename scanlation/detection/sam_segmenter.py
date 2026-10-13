@@ -175,8 +175,14 @@ class SAMSegmenter(BoxPromptSegmenter):
             from segment_anything import sam_model_registry
         except ImportError as exc:  # pragma: no cover - ขึ้นกับ environment
             raise RuntimeError(
-                "ต้องติดตั้ง segment-anything: "
-                "pip install git+https://github.com/facebookresearch/segment-anything.git"
+                "ยังไม่ได้ติดตั้ง segment-anything (SAM) — จึงยังใช้ตัวตัดขอบเขตแบบ SAM ไม่ได้\n"
+                "  เลือกทางใดทางหนึ่ง:\n"
+                "    1) ติดตั้ง SAM (คุณภาพดีสุด):\n"
+                "         pip install -r requirements-ml.txt\n"
+                "         python scripts/download_weights.py --model vit_b\n"
+                "    2) หรือใช้ตัวที่ไม่ต้องติดตั้งเพิ่ม (รันได้ทันที):\n"
+                "         สร้าง .env แล้วใส่  SCANLATION_SEGMENTER=box\n"
+                "         (หรือ fastsam ถ้าติดตั้ง ultralytics แล้ว)"
             ) from exc
 
         mtype = self.cfg.sam_model_type

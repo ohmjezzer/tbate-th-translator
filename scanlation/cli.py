@@ -42,6 +42,13 @@ def _load_config(path: str | None) -> ScanlationConfig:
 
 def cmd_run(args) -> int:
     cfg = _load_config(args.config)
+    # ตรวจล่วงหน้า: ถ้าจะแปลแต่ยังไม่มีคีย์ ให้ข้อความแนะนำเป็นขั้นตอน (ไม่ให้ล้มกลางทาง)
+    if not args.no_translate and not cfg.api_key():
+        from .providers import missing_key_help
+
+        print(missing_key_help(cfg.translation.backend,
+                               command="python -m scanlation.cli run"), file=sys.stderr)
+        return 2
     pipeline = ScanlationPipeline(cfg)
     pages = [int(x) for x in args.pages] if args.pages else None
     results = pipeline.run(pages=pages, do_translate=not args.no_translate)
@@ -104,12 +111,16 @@ def cmd_detect(args) -> int:
 
     from .detection import DetectionPipeline
     from .detection.ocr_detector import EasyOCRDetector
-    from .detection.sam_segmenter import SAMSegmenter
+    from .detection.sam_segmenter import BoxPromptSegmenter, FastSAMSegmenter, SAMSegmenter
     from .utils import image_io
 
     cfg = _load_config(args.config)
     d = cfg.detection
-    det = DetectionPipeline(EasyOCRDetector(d), SAMSegmenter(d), d)
+    # เลือก segmenter ผ่านตัว resolve เดียวกับ pipeline (ไม่ hardcode SAM)
+    name = ScanlationPipeline.resolve_segmenter_name(d.segmenter, allow_fallback=d.auto_fallback)
+    segmenter = {"sam": SAMSegmenter, "fastsam": FastSAMSegmenter,
+                 "box": BoxPromptSegmenter}[name](d)
+    det = DetectionPipeline(EasyOCRDetector(d), segmenter, d)
     pipe = ScanlationPipeline(cfg, detection=det)
 
     for index, path in pipe.discover_pages():
@@ -161,6 +172,82 @@ def cmd_init_config(args) -> int:
     return 0
 
 
+# ===========================================================================
+# setup — ตั้งค่าครั้งแรกด้วยผู้ให้บริการ "ฟรี" (ไม่ต้องมีโมเดล/บัตรเครดิต)
+# ===========================================================================
+def _print_catalog(free_only: bool = False) -> None:
+    from .providers import list_all, list_free
+
+    providers = list_free() if free_only else list_all()
+    print("\n=== ผู้ให้บริการที่รองรับ ===")
+    print(f"{'ชื่อ':<12} {'ฟรี':<5} {'โมเดลดีฟอลต์':<44} ขอคีย์ที่")
+    print("-" * 96)
+    for p in providers:
+        print(f"{p.name:<12} {'✓' if p.free else '✗':<5} {p.default_model:<44} {p.signup_url}")
+    print("\nหมายเหตุ: ผู้ให้บริการที่ไม่ใช่ Anthropic ใช้ API แบบ OpenAI-compatible "
+          "ระบบตั้ง base_url ให้อัตโนมัติ")
+
+
+def cmd_setup(args) -> int:
+    """
+    ตั้งค่าครั้งแรก (สร้างไฟล์ .env) ด้วยผู้ให้บริการฟรี
+
+        python -m scanlation.cli setup --list                 # ดูรายชื่อผู้ให้บริการ
+        python -m scanlation.cli setup --provider gemini --key AIza... # เขียน .env
+        python -m scanlation.cli setup --free                 # ใช้ผู้ให้บริการฟรีที่แนะนำ (มีช่องให้เติมคีย์)
+    """
+    from .providers import get, list_free
+
+    if args.list:
+        _print_catalog(free_only=not args.all)
+        return 0
+
+    target = args.path or ".env"
+    path = Path(target)
+
+    # เลือกผู้ให้บริการ: ถ้าระบุ --provider ใช้ตัวนั้น, ถ้า --free ใช้ตัวฟรีที่แนะนำตัวแรก
+    if args.provider:
+        prov = get(args.provider)
+        if prov is None:
+            print(f"ไม่รู้จักผู้ให้บริการ '{args.provider}' — ดูรายชื่อ: "
+                  f"python -m scanlation.cli setup --list")
+            return 2
+    else:
+        prov = list_free()[0]      # gemini
+
+    if path.exists() and not args.force:
+        print(f"ไฟล์ {path} มีอยู่แล้ว — ใช้ --force ถ้าต้องการเขียนทับ")
+        return 1
+
+    key = args.key or ""
+    key_line = f"{prov.primary_env()}={key}" if prov.primary_env() else (
+        "# (ผู้ให้บริการนี้ไม่ต้องใช้คีย์ — รันในเครื่อง)")
+
+    content = f"""# =============================================================
+#  .env — สร้างโดย `python -m scanlation.cli setup`
+#  ผู้ให้บริการ: {prov.display}{"  (ระดับฟรี)" if prov.free else ""}
+#  ขอคีย์ (ถ้ามี) ที่: {prov.signup_url}
+# =============================================================
+
+# --- AI (สเตจแปล) ---
+{key_line}
+SCANLATION_TRANSLATION_BACKEND={prov.name}
+SCANLATION_TRANSLATION_MODEL={prov.default_model}
+
+# --- อุปกรณ์ (cpu | cuda | mps) ---
+SCANLATION_PROFILE=cpu
+
+#  ต้องการปรับค่าอื่น ๆ ดูรายการทั้งหมดได้ในไฟล์ .env.example
+"""
+    path.write_text(content, encoding="utf-8")
+    print(f"✓ เขียนไฟล์ {path} เรียบร้อย (ผู้ให้บริการ: {prov.display})")
+    if prov.env_keys and not key:
+        print(f"  → ต่อไป: ขอคีย์ฟรีได้ที่ {prov.signup_url}")
+        print(f"          แล้วใส่ในไฟล์ {path} บรรทัด: {prov.primary_env()}=<คีย์ของคุณ>")
+    print(f"  → ตรวจสอบ: python scripts/check_env.py")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="scanlation", description="ระบบแปลมังงะอัตโนมัติ")
     p.add_argument("-c", "--config", help="path ของ config.json/yaml")
@@ -196,6 +283,16 @@ def build_parser() -> argparse.ArgumentParser:
     pi = sub.add_parser("init-config", help="สร้าง config ตัวอย่าง")
     pi.add_argument("--dir", default="config")
     pi.set_defaults(func=cmd_init_config)
+
+    pst = sub.add_parser("setup", help="ตั้งค่าครั้งแรกด้วยผู้ให้บริการ AI ฟรี (สร้าง .env)")
+    pst.add_argument("--list", action="store_true", help="แสดงรายชื่อผู้ให้บริการ")
+    pst.add_argument("--all", action="store_true", help="แสดงทั้งหมด (รวมตัวเสียเงิน)")
+    pst.add_argument("--provider", help="ชื่อผู้ให้บริการ เช่น gemini/groq/openrouter/anthropic/openai")
+    pst.add_argument("--key", help="API key (จะถูกเขียนลง .env)")
+    pst.add_argument("--free", action="store_true", help="ใช้ผู้ให้บริการฟรีที่แนะนำ")
+    pst.add_argument("--path", default=".env", help="ไฟล์ปลายทาง (ดีฟอลต์ .env)")
+    pst.add_argument("--force", action="store_true", help="เขียนทับไฟล์เดิม")
+    pst.set_defaults(func=cmd_setup)
     return p
 
 

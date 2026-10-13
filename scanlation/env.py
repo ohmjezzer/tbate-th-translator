@@ -82,6 +82,8 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
     "SCANLATION_SOURCE_REGEX":         ("download", "source_regex", _str),
 
     # ---------------- detection ----------------
+    "SCANLATION_SEGMENTER":          ("detection", "segmenter", _str),
+    "SCANLATION_AUTO_FALLBACK":      ("detection", "auto_fallback", _bool),
     "SCANLATION_OCR_ENGINE":         ("detection", "ocr_engine", _str),
     "SCANLATION_OCR_LANGS":          ("detection", "ocr_langs", _csv_tuple),
     "SCANLATION_OCR_MIN_CONFIDENCE": ("detection", "ocr_min_confidence", _float),
@@ -130,32 +132,21 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
 }
 
 # ---------------------------------------------------------------------------
-# API key ของผู้ให้บริการ AI (ชื่อมาตรฐาน — SDK อ่านเอง)
-# เรียงตาม provider; .env.example จะมีให้ครบทุกเจ้า
+# API key ของผู้ให้บริการ AI — ดึงจากแคตตาล็อกกลาง (scanlation/providers.py)
+# เพื่อไม่ให้จำนวน/ชื่อคีย์กระจายอยู่หลายที่ (single source of truth)
 # ---------------------------------------------------------------------------
+from . import providers as _providers  # noqa: E402  (import หลัง stdlib)
+
 PROVIDER_API_KEYS: Dict[str, List[str]] = {
-    "anthropic":  ["ANTHROPIC_API_KEY"],
-    "openai":     ["OPENAI_API_KEY"],
-    "azure":      ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"],
-    "gemini":     ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "google":     ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "deepseek":   ["DEEPSEEK_API_KEY"],
-    "groq":       ["GROQ_API_KEY"],
-    "mistral":    ["MISTRAL_API_KEY"],
-    "openrouter": ["OPENROUTER_API_KEY"],
-    "together":   ["TOGETHER_API_KEY", "TOGETHER_AI_API_KEY"],
-    "xai":        ["XAI_API_KEY"],
-    "grok":       ["XAI_API_KEY"],
-    "perplexity": ["PERPLEXITY_API_KEY"],
-    "cohere":     ["COHERE_API_KEY"],
-    "fireworks":  ["FIREWORKS_API_KEY"],
-    "cerebras":   ["CEREBRAS_API_KEY"],
-    "huggingface": ["HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"],
-    "replicate":  ["REPLICATE_API_TOKEN"],
+    name: _providers.api_keys_for(name) for name in _providers.CATALOG
 }
+# เติม alias ให้ resolve_api_key หาเจอด้วย (เช่น "grok" -> XAI_API_KEY)
+for _alias, _target in _providers.ALIASES.items():
+    if _target in PROVIDER_API_KEYS:
+        PROVIDER_API_KEYS.setdefault(_alias, PROVIDER_API_KEYS[_target])
 
 # ตัวแปรที่ระบบรู้จัก (ไว้ใช้ใน check_env / docs)
-KNOWN_AI_KEYS = [k for keys in PROVIDER_API_KEYS.values() for k in keys]
+KNOWN_AI_KEYS = _providers.all_env_keys()
 
 
 def load_dotenv(path: str | os.PathLike = ".env", override: bool = False,

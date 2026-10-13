@@ -103,13 +103,12 @@ def run_download(chapter_url: str, limit: int, out_dir: str | None,
 def run_full(config_path: str | None, pages: list[int] | None) -> None:
     cfg = _build_config(config_path)
 
-    # ตรวจว่ามี API key ของ LLM หรือยัง
+    # ตรวจว่ามี API key ของ LLM หรือยัง — ถ้าไม่มี ให้ข้อความแนะนำเป็นขั้นตอน
     if not cfg.api_key():
-        raise SystemExit(
-            f"ไม่พบ API key สำหรับ backend '{cfg.translation.backend}': "
-            "กรุณาคัดลอก .env.example เป็น .env แล้วใส่ key "
-            "(หรือตั้ง environment variable ให้ตรงกับ provider)"
-        )
+        from scanlation.providers import missing_key_help
+
+        raise SystemExit(missing_key_help(cfg.translation.backend,
+                                          command="python pipeline_example.py"))
 
     # สร้าง pipeline (คอมโพเนนต์ถูกสร้างจาก config อัตโนมัติ)
     pipeline = ScanlationPipeline(cfg)
