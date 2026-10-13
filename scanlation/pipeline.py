@@ -380,13 +380,32 @@ class ScanlationPipeline:
     # ------------------------------------------------------------------
     def run(self, pages: Optional[Sequence[int]] = None,
             do_translate: bool = True) -> List[ScanlationResult]:
+        """
+        ประมวลผลหลายหน้า/ทั้งเรื่อง
+
+        ★ กัน "หน้าที่ล้มเหลวไปทั้งเรื่อง": จับ error ระดับ "หน้า" แล้วเดินต่อ
+        เดิมถ้าหน้าใดหน้า 1 ล้ม (เช่น LLM ตอบ JSON ขาด / เน็ตสะดุดจน retry ครบ)
+        exception จะลอยขึ้นไปทำให้ "ทุกหน้าหลังจากนั้นไม่ถูกประมวลผลเลย"
+        → ผู้ใช้เห็นเป็นบางหน้าไทย บางหน้าอังกฤษ (เหมือนแปลไม่ทั้งเรื่อง)
+        """
         paths = self.discover_pages()
         if pages is not None:
             wanted = set(pages)
             paths = [(i, p) for (i, p) in paths if i in wanted]
-        results = []
+
+        results: List[ScanlationResult] = []
+        failures: List[tuple[int, str, str]] = []
         for index, path in paths:
-            results.append(self.process_page(path, index=index, do_translate=do_translate))
+            try:
+                results.append(self.process_page(path, index=index, do_translate=do_translate))
+            except Exception as exc:  # noqa: BLE001 - ตั้งใจกันไม่ให้ทั้งเรื่องล้ม
+                log.error("หน้า %d (%s) ล้มเหลว: %s: %s — ข้ามไปหน้าถัดไป",
+                          index, path.name, type(exc).__name__, exc)
+                failures.append((index, path.name, f"{type(exc).__name__}: {exc}"))
+
+        if failures:
+            log.warning("มี %d หน้าที่ประมวลผลไม่สำเร็จ: %s",
+                        len(failures), ", ".join(f"หน้า {i}" for i, _, _ in failures))
         return results
 
     def discover_pages(self) -> List[tuple[int, Path]]:

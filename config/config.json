@@ -68,7 +68,10 @@
     "characters_path": "config/characters.json",
     "cache_path": ".scanlation/translation_cache.json",
     "max_retries": 3,
-    "timeout": 120.0
+    "timeout": 120.0,
+    "batch_size": 12,
+    "repair_passes": 1,
+    "on_missing": "keep_source"
   },
   "typesetting": {
     "regular_font": "fonts/Sarabun-Regular.ttf",

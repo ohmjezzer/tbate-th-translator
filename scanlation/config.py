@@ -103,6 +103,10 @@ class TranslationConfig:
     cache_path: str = ".scanlation/translation_cache.json"
     max_retries: int = 3
     timeout: float = 120.0
+    batch_size: int = 12                          # แปลกี่บล็อกต่อการเรียก API 1 ครั้ง
+                                                  # (กัน LLM ตอบยาวจน JSON ขาดกลางคัน)
+    repair_passes: int = 1                        # รอบซ่อม: ยิงซ้ำเฉพาะบูล็อกที่คำแปลขาด/ปนอังกฤษ
+    on_missing: str = "keep_source"               # ถ้าไม่ได้คำแปล: keep_source (อังกฤษล้วน) | blank
 
 
 # ---------------------------------------------------------------------------

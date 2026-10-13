@@ -10,6 +10,11 @@ translation/llm_translator.py
 
 หลักการ DI: LLMTranslator รับ "backend" เข้ามา → ทดสอบด้วย MockBackend ได้
 โดยไม่ต้องยิง API จริง
+
+การแก้ปัญหา "บางบอลลูนไม่ถูกแปล / ไทยปนอังกฤษ" (ดู _verify + _repair):
+    - แบ่งเป็นชุดย่อย (batch) ตามจำนวนบล็อก กัน LLM ตอบยาวจน JSON ขาดกลางคัน
+    - ตรวจผลลัพธ์ว่าครบทุก id และไม่เหลือคำอังกฤษค้าง
+    - ส่ง "รอบซ่อม" (repair pass) เฉพาะรายการที่มีปัญหา พร้อมกำชับเป็นพิเศษ
 """
 
 from __future__ import annotations
@@ -21,11 +26,11 @@ import re
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ..config import TranslationConfig
 from ..providers import api_style_for, base_url_for, exists as provider_exists, list_free
-from ..schemas import Bubble, Page
+from ..schemas import BlockKind, Bubble, Page
 from ..utils.logging_utils import get_logger
 from .base import Translator, TranslationContext
 from .glossary import StoryContext, load_context
@@ -252,6 +257,17 @@ class LLMTranslator(Translator):
         for bub in bubbles:
             src = bub.source_text.strip()
             if not src:
+                # ไม่มีข้อความต้นฉบับ -> ไม่มีอะไรให้แปล
+                # แต่ต้อง "ทำเครื่องหมาย" ไว้ เพื่อให้ stages ถัดไปรู้ว่าไม่มีคำแปล
+                bub.meta["untranslated"] = True
+                continue
+            if not self._is_translatable(src, bub):
+                # ★ ต้นฉบับเป็น "ขยะจาก OCR" (เช่น "... . . . | |") -> ไม่มีความหมายให้แปล
+                #   เดิมส่งเข้า LLM ทำให้ LLM ตอบค่าว่าง แล้วโค้ด fallback เอา "ขยะ" มาแสดง
+                log.warning("%s: ต้นฉบับไม่มีความหมายให้แปล %r — ข้าม (mark untranslated)",
+                            bub.uid, src[:40])
+                bub.meta["untranslated"] = True
+                bub.meta["source_text"] = bub.source_text
                 continue
             cached = self._cache.get(self._key(src, bub.kind.value, self.cfg.model))
             if cached:
@@ -263,31 +279,160 @@ class LLMTranslator(Translator):
             log.info("หน้า %d: ใช้คำแปลจาก cache ทั้งหมด", page.index)
             return page
 
-        log.info("หน้า %d: เรียก %s (%d บล็อก) ...",
-                 page.index, self.cfg.model, len(pending))
+        # ★ แบ่งเป็นชุดย่อย เพื่อกัน LLM ตอบยาวเกิน max_tokens จน JSON ขาดกลางคัน
+        #   (ต้นเหตุอันดับหนึ่งของ "บางบอลลูนไม่ถูกแปล")
+        batch_size = max(1, int(getattr(self.cfg, "batch_size", 12)))
+        batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
+        log.info("หน้า %d: เรียก %s (%d บล็อก, %d ชุด) ...",
+                 page.index, self.cfg.model, len(pending), len(batches))
 
         system = build_system_prompt(ctx)
-        user = build_user_prompt(pending, target_lang=self.cfg.target_lang,
-                                 page_summary=ctx.page_summary)
+        for bi, batch in enumerate(batches, 1):
+            mapping = self._translate_batch(system, batch, ctx)
+            # ★ ตรวจผลลัพธ์ + ซ่อม (รอบซ่อมยิงเฉพาะรายการที่มีปัญหา)
+            mapping = self._verify_and_repair(system, batch, mapping, ctx)
 
-        result = self._call_with_retry(system, user)
-        mapping: Dict[str, str] = {
-            str(item["id"]): str(item.get("th", ""))
-            for item in result.get("translations", [])
-        }
-
-        # 2) เขียนคำแปลกลับ + ตรวจ glossary + เก็บ cache
-        for bub in pending:
-            th = mapping.get(bub.uid, "").strip()
-            if not th:
-                log.warning("ไม่พบคำแปลสำหรับ %s — คงข้อความเดิมไว้ก่อน", bub.uid)
-                th = bub.source_text
-            th = self.story.glossary.enforce(th)
-            bub.set_translation(th)
-            self._cache[self._key(bub.source_text, bub.kind.value, self.cfg.model)] = th
+            for bub in batch:
+                self._apply(bub, mapping.get(bub.uid, ""))
 
         self._save_cache()
         return page
+
+    # ---- แปล 1 ชุด + parse ------------------------------------------------
+    def _translate_batch(self, system: str, batch: List[Bubble],
+                         ctx: TranslationContext) -> Dict[str, str]:
+        user = build_user_prompt(batch, target_lang=self.cfg.target_lang,
+                                 page_summary=ctx.page_summary)
+        result = self._call_with_retry(system, user)
+        return {
+            str(item.get("id", "")).strip(): str(item.get("th", ""))
+            for item in (result.get("translations") or [])
+        }
+
+    # ---- ตรวจ + ซ่อมรอบที่ 1: id ที่ขาด, คำแปลว่าง, ไทยปนอังกฤษ -------------
+    def _verify_and_repair(self, system: str, batch: List[Bubble],
+                           mapping: Dict[str, str],
+                           ctx: TranslationContext) -> Dict[str, str]:
+        """
+        ตรวจว่า "ทุกบอลลูนได้คำแปลที่ใช้ได้" แล้วหรือยัง
+
+        ปัญหาที่ตรวจ (เรียงตามที่เจอจริงใน sandbox):
+            1. ไม่มี id นี้ในคำตอบ       -> เดิม "คงข้อความอังกฤษเดิม" (ต้นตอบอลลูนเป็นอังกฤษ)
+            2. คำแปลเป็นค่าว่าง ""        -> เดิมก็ fallback เป็นอังกฤษเหมือนกัน
+            3. คำแปลยังมีคำอังกฤษค้าง    -> ได้ "ไทยปนอังกฤษ"
+            4. id ผิดรูปแบบ (#bub0, 0)   -> ทำให้ทั้ง 1-3 เกิดพร้อมกันทั้งหน้า
+        """
+        allow_latin = [x for x in self.story.glossary.allowed_latin()]
+        needs: List[Bubble] = []
+        for bub in batch:
+            th = (mapping.get(bub.uid) or "").strip()
+            if not th:
+                needs.append(bub)
+            elif self._has_leftover_english(th, allow_latin):
+                needs.append(bub)
+
+        passes = max(0, int(getattr(self.cfg, "repair_passes", 1)))
+        for attempt in range(1, passes + 1):
+            if not needs:
+                break
+            log.warning("หน้า: มี %d บล็อกที่คำแปลไม่สมบูรณ์ — ซ่อมรอบที่ %d (%s)",
+                        len(needs), attempt,
+                        ", ".join(b.uid for b in needs[:8]))
+            # ส่งเฉพาะรายการที่มีปัญหา + กำชับเรื่องที่มักพลาด
+            user = build_user_prompt(
+                needs, target_lang=self.cfg.target_lang,
+                page_summary=(ctx.page_summary or ""),
+                repair_note=(
+                    "REPAIR: ด้านล่างนี้คือรายการที่ยังมีปัญหา คำตอบก่อนหน้าขาด id นี้ "
+                    "หรือยังเหลือคำภาษาอังกฤษค้างอยู่ในคำแปล\n"
+                    "จงตอบ “ครบทุก id” ด้านล่าง และเขียนคำแปลเป็น “ภาษาไทยล้วน” "
+                    "(ห้ามเหลือคำอังกฤษ ยกเว้นชื่อเฉพาะที่กำหนดใน glossary) "
+                    "ถ้าไม่แน่ใจความหมายของวลีอังกฤษ ให้แปลตามบริบทให้กลายเป็นไทย "
+                    "และต้องไม่ตอบเป็นค่าว่าง"
+                ),
+            )
+            try:
+                result = self._call_with_retry(system, user)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ซ่อมคำแปลล้มเหลว: %s", exc)
+                break
+            got = {str(i.get("id", "")).strip(): str(i.get("th", ""))
+                   for i in (result.get("translations") or [])}
+            still: List[Bubble] = []
+            for bub in needs:
+                th = (got.get(bub.uid) or "").strip()
+                if th and not self._has_leftover_english(th, allow_latin):
+                    mapping[bub.uid] = th
+                else:
+                    if th:
+                        mapping[bub.uid] = th      # ดีกว่าเดิม แม้ยังปนอังกฤษ
+                    still.append(bub)
+            needs = still
+        return mapping
+
+    @staticmethod
+    def _is_translatable(src: str, bub: Bubble) -> bool:
+        """
+        มี "เนื้อความให้แปล" จริงไหม
+
+        - SFX: ยอมรับแม้ไม่ใช่ตัวอักษร (เช่น "!?" "—") เพราะเป็นเสียง/สัญลักษณ์
+        - ชนิดอื่น: ต้องมีตัวอักษรอย่างน้อย 1 ตัว (ไทย/อังกฤษ/อื่น ๆ)
+          ถ้าเป็นแต่เครื่องหมายวรรคตอน/จุดไข่ปลา = ขยะจาก OCR -> ไม่ต้องแปล
+        """
+        if bub.kind == BlockKind.SFX:
+            return True
+        return any(ch.isalpha() for ch in src)
+
+    @staticmethod
+    def _has_leftover_english(text: str, allow_latin: Sequence[str] = ()) -> bool:
+        """มี 'คำอังกฤษ' ค้างในคำแปลไทยไหม (ยอมรับคำที่อนุญาต + อักษรโรมันในชื่อเฉพาะ)"""
+        for allowed in allow_latin:
+            text = text.replace(allowed, " ")
+        # คำอังกฤษ = มีตัวอักษรละตินติดกัน >= 2 ตัวขึ้นไป (กันกรณี "I" เดี่ยว ๆ)
+        return re.search(r"[A-Za-z]{2,}", text) is not None
+
+    def _apply(self, bub: Bubble, th: str) -> None:
+        """
+        เขียนคำแปลกลับเข้าบอลลูน
+
+        ★ เปลี่ยนพฤติกรรมจากเดิม:
+          เดิมเมื่อ LLM ตอบไม่ครบ id โค้ดจะตั้ง th = source_text **แล้วยังเอา
+          enforce() ของ glossary ไปรันกับข้อความอังกฤษนั้น** → ได้ข้อความ
+          "ไทยปนอังกฤษ" (เช่น 'The มานา Core is unstable, Arthur.')
+          ซึ่งเป็นอาการที่ผู้ใช้เห็น ตอนนี้แยกสองเส้นทางชัดเจน:
+
+            - ได้คำแปลจริง  -> enforce() ได้ตามปกติ
+            - ไม่ได้คำแปล    -> ทำตาม cfg.on_missing
+                 "keep_source" (ค่าดีฟอลต์) = คงข้อความต้นฉบับ "อังกฤษล้วน"
+                                 (ไม่ผ่าน glossary จึงไม่กลายเป็นไทยปนอังกฤษ)
+                 "blank"                     = เว้นว่างไว้ (ไม่มีอะไรถูกวาดทับ)
+              ทั้งสองกรณีทำเครื่องหมาย meta["untranslated"]=true + meta["source_text"]
+              เพื่อให้หน้า preview / ขั้นต่อไปรู้ว่าบอลลูนนี้ยังต้องแก้
+        """
+        th = (th or "").strip()
+        if not th:
+            bub.meta["untranslated"] = True
+            bub.meta["source_text"] = bub.source_text
+            on_missing = (getattr(self.cfg, "on_missing", "keep_source") or "keep_source").lower()
+            if on_missing == "blank":
+                bub.set_translation("")
+                log.warning("ไม่พบคำแปลสำหรับ %s — เว้นว่าง (meta.untranslated=true)", bub.uid)
+            else:
+                # คงข้อความเดิมแบบ "อังกฤษล้วน" (ไม่ผ่าน glossary) เพื่อไม่ให้เป็นไทยปนอังกฤษ
+                bub.set_translation(bub.source_text)
+                log.warning("ไม่พบคำแปลสำหรับ %s — คงข้อความต้นฉบับไว้ "
+                            "(meta.untranslated=true; แก้ได้ในหน้า preview หรือเปิด "
+                            "repair_passes เพิ่ม)", bub.uid)
+            return
+
+        # glossary บังคับคำเฉพาะ — "เฉพาะกรณีได้คำแปลจริง"
+        th = self.story.glossary.enforce(th)
+        if self._has_leftover_english(th, self.story.glossary.allowed_latin()):
+            log.warning("%s: คำแปลยังมีอังกฤษปนอยู่: %r", bub.uid, th)
+            bub.meta["leftover_english"] = True
+        bub.meta.pop("untranslated", None)
+        bub.set_translation(th)
+        self._cache[self._key(bub.source_text, bub.kind.value, self.cfg.model)] = th
 
     # ---- ตรวจว่า error เกิดจาก "โมเดลใช้ไม่ได้" (ไม่ควร retry) -----------
     def _model_error_hint(self, exc: Exception) -> Optional[str]:
