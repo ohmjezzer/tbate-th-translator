@@ -32,6 +32,17 @@
 
     <!-- พื้นที่แสดงภาพ + overlay -->
     <section class="stage">
+      <div class="empty-state hidden" id="emptyState">
+        <div class="es-icon">📄</div>
+        <h2 id="esTitle">หน้านี้ยังไม่ได้ประมวลผล</h2>
+        <p id="esMsg" class="muted"></p>
+        <div class="es-actions">
+          <button class="btn primary" id="btnPrepare">▶ ประมวลผลหน้านี้</button>
+          <span class="muted small">หรือรันเองในเทอร์มินัล:</span>
+        </div>
+        <code id="esCmd" class="es-cmd"></code>
+        <p id="esHint" class="muted small"></p>
+      </div>
       <div class="stage-inner" id="stageInner">
         <img id="pageImage" alt="page" />
         <div id="overlay" class="overlay"></div>

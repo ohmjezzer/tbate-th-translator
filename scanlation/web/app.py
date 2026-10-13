@@ -40,6 +40,27 @@ _IMAGE_EXTS = (".webp", ".png", ".jpg", ".jpeg", ".bmp")
 
 
 # ---------------------------------------------------------------------------
+# ข้อยกเว้นเฉพาะของฝั่ง preview (เพื่อคืนข้อความช่วยเหลือให้ frontend)
+# ---------------------------------------------------------------------------
+class PageNotReady(Exception):
+    """หน้าที่ขอ ยังไม่มีข้อมูลใน .scanlation/ (ยังไม่ได้ประมวลผล)"""
+
+    def __init__(self, index: int, command: Optional[str] = None, message: str = ""):
+        self.index = index
+        self.command = command
+        self.message = message or f"หน้านี้ยังไม่ได้ประมวลผล (ไม่มีข้อมูลใน .scanlation/)"
+        super().__init__(self.message)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"error": self.message, "needs_run": True,
+                "index": self.index, "command": self.command}
+
+
+class PrepareError(Exception):
+    """การประมวลผลหน้า (Detection→Translate→Inpaint→Typeset) ล้มเหลว"""
+
+
+# ---------------------------------------------------------------------------
 # ค้นหาไฟล์ภาพของแต่ละหน้าจากเลขหน้า (page-0001.*)
 # ---------------------------------------------------------------------------
 def _find_file(directory: Path, index: int, exts=_IMAGE_EXTS) -> Optional[Path]:
@@ -59,6 +80,10 @@ class PreviewServer:
         self.input_dir = Path(self.cfg.paths.input_dir)
         self.output_dir = Path(self.cfg.paths.output_dir)
         self.work_dir = Path(self.cfg.paths.work_dir)
+
+    def run_command(self, index: int) -> str:
+        """คำสั่ง CLI ที่ผู้ใช้ควรรันเพื่อประมวลผลหน้านี้"""
+        return f"python -m scanlation.cli run {index}"
 
     # ---- รายการหน้า -------------------------------------------------------
     def _page_indexes(self) -> List[int]:
@@ -85,6 +110,8 @@ class PreviewServer:
                 "orig": _find_file(self.input_dir, i) is not None,
                 "out": _find_file(self.output_dir, i) is not None,
                 "cleaned": (self.work_dir / f"2_cleaned_p{i:04d}.png").exists(),
+                # ready = มีข้อมูลข้อความ/คำแปลใน .scanlation แล้ว (เปิดแก้ไขได้)
+                "ready": self._page_json(i) is not None,
             })
         return {
             "input_dir": str(self.input_dir),
@@ -104,10 +131,7 @@ class PreviewServer:
     def get_page(self, index: int) -> Dict[str, Any]:
         p = self._page_json(index)
         if p is None:
-            raise FileNotFoundError(
-                f"ไม่พบไฟล์ข้อมูลหน้าที่ {index} ใน {self.work_dir}/ — "
-                f"รัน `scanlation.cli run {index}` ก่อน"
-            )
+            raise PageNotReady(index, self.run_command(index))
         page = Page.load_json(p)
 
         # ขนาดภาพ (จาก out -> cleaned -> orig)
@@ -139,7 +163,7 @@ class PreviewServer:
         """บันทึกคำแปล + ค่าที่แก้ (จาก frontend) กลับลงไฟล์ JSON"""
         p = self._page_json(index)
         if p is None:
-            raise FileNotFoundError(f"ไม่พบไฟล์ข้อมูลหน้าที่ {index}")
+            raise PageNotReady(index, self.run_command(index))
         page = Page.load_json(p)
 
         edits = {b["uid"]: b for b in payload.get("bubbles", []) if "uid" in b}
@@ -166,7 +190,7 @@ class PreviewServer:
         """วาดข้อความตามคำแปล/ค่าที่แก้ แล้วเขียนทับ out/page-XXXX.png"""
         p = self._page_json(index)
         if p is None:
-            raise FileNotFoundError(f"ไม่พบไฟล์ข้อมูลหน้าที่ {index}")
+            raise PageNotReady(index, self.run_command(index))
         page = Page.load_json(p)
 
         # ใช้ภาพที่ inpaint แล้วเป็นฐาน (ถ้าไม่มี ใช้ต้นฉบับแทน พร้อมเตือน)
@@ -186,6 +210,36 @@ class PreviewServer:
         out_path = self.output_dir / f"page-{index:04d}.png"
         image_io.save_image(out, out_path)
         return {"ok": True, "out": str(out_path), "media": self._media_urls(index)}
+
+    # ---- ประมวลผลหน้าจาก UI (Detection→Translate→Inpaint→Typeset) --------
+    def prepare_page(self, index: int, pipeline=None) -> Dict[str, Any]:
+        """
+        ประมวลผลหน้าที่ระบุ "จากหน้าเว็บ" ได้เลย (ไม่ต้องออกไปรัน CLI เอง)
+        แล้วคืนข้อมูลหน้า (พร้อมให้แก้ไข) กลับไป
+
+        pipeline: ฉีดเข้ามาได้เพื่อทดสอบ (ค่าเริ่มต้น = ScanlationPipeline ปกติ)
+        """
+        orig = _find_file(self.input_dir, index)
+        if orig is None:
+            raise PageNotReady(
+                index, None,
+                f"ไม่พบภาพต้นฉบับของหน้าที่ {index} ในโฟลเดอร์ '{self.input_dir}' "
+                f"— วางไฟล์ หรือดาวน์โหลดก่อน: python -m scanlation.cli download <url>",
+            )
+
+        if pipeline is None:
+            from ..pipeline import ScanlationPipeline
+
+            pipeline = ScanlationPipeline(self.cfg)
+
+        log.info("[preview] เริ่มประมวลผลหน้า %d: %s", index, orig.name)
+        try:
+            pipeline.process_page(orig, index=index, do_translate=True, save=True)
+        except Exception as exc:  # noqa: BLE001 - ส่งข้อความจริงกลับให้ UI
+            raise PrepareError(f"{type(exc).__name__}: {exc}") from exc
+
+        log.info("[preview] ประมวลผลหน้า %d เสร็จ", index)
+        return self.get_page(index)
 
     # ---- URL ของสื่อ ------------------------------------------------------
     def _media_urls(self, index: int) -> Dict[str, Optional[str]]:
@@ -237,6 +291,8 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
     def api_get_page(index: int):
         try:
             return jsonify(server.get_page(index))
+        except PageNotReady as exc:
+            return jsonify(exc.to_dict()), 404
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
 
@@ -244,6 +300,8 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
     def api_save_page(index: int):
         try:
             return jsonify(server.save_page(index, request.get_json(force=True) or {}))
+        except PageNotReady as exc:
+            return jsonify(exc.to_dict()), 404
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
 
@@ -251,10 +309,28 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
     def api_render_page(index: int):
         try:
             return jsonify(server.render_page(index))
+        except PageNotReady as exc:
+            return jsonify(exc.to_dict()), 404
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 404
         except Exception as exc:  # noqa: BLE001
             log.exception("เรนเดอร์หน้า %d ล้มเหลว", index)
+            return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+    @app.post("/api/page/<int:index>/prepare")
+    def api_prepare_page(index: int):
+        """ประมวลผลหน้าจากหน้าเว็บ (Detection→Translate→Inpaint→Typeset)"""
+        try:
+            return jsonify(server.prepare_page(index))
+        except PageNotReady as exc:
+            return jsonify(exc.to_dict()), 404
+        except PrepareError as exc:
+            return jsonify({"error": str(exc),
+                            "hint": "ตรวจการตั้งค่า/การติดตั้ง (เช่น SAM, LaMa, API key) "
+                                    "แล้วลองใหม่ — หรือรันเอง: "
+                                    f"python -m scanlation.cli run {index}"}), 500
+        except Exception as exc:  # noqa: BLE001
+            log.exception("ประมวลผลหน้า %d ล้มเหลว", index)
             return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
     @app.get("/media/<kind>/<int:index>")
