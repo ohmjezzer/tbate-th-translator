@@ -362,7 +362,7 @@ python -c "from scanlation.config import ScanlationConfig; c=ScanlationConfig.fr
 | `inpainting.device` | เหมือนด้านบน |
 | `detection.sam_model_type` | `"vit_h"` (แม่นสุด) / `"vit_b"` (เบา) |
 | `translation.backend` + `translation.model` | เลือก `anthropic` หรือ `openai` |
-| `detection.ocr_engine` | `"easyocr"` (แนะนำ) หรือ `"tesseract"` |
+| `detection.ocr_engine` | `"paddleocr"` (แม่นสุด แนะนำ — ต้อง `pip install paddlepaddle paddleocr`) / `"easyocr"` / `"tesseract"` |
 
 สร้างไฟล์ config ตัวอย่างใหม่ได้ด้วย:
 ```bash

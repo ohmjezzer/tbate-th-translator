@@ -3,6 +3,7 @@
 
 from .base import BubbleSegmenter, TextDetector
 from .ocr_detector import EasyOCRDetector, TesseractDetector
+from .paddle_detector import PaddleOCRDetector
 from .sam_segmenter import SAMSegmenter, FastSAMSegmenter, BoxPromptSegmenter
 from .pipeline import DetectionPipeline
 
@@ -11,6 +12,7 @@ __all__ = [
     "BubbleSegmenter",
     "EasyOCRDetector",
     "TesseractDetector",
+    "PaddleOCRDetector",
     "SAMSegmenter",
     "FastSAMSegmenter",
     "BoxPromptSegmenter",

@@ -26,7 +26,7 @@
     "source_regex": ""
   },
   "detection": {
-    "ocr_engine": "easyocr",
+    "ocr_engine": "paddleocr",
     "ocr_langs": ["en"],
     "ocr_min_confidence": 0.4,
     "ocr_group_by": "line",

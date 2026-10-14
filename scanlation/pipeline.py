@@ -188,9 +188,13 @@ class ScanlationPipeline:
 
     def _default_detection(self) -> DetectionPipeline:
         d = self.cfg.detection
-        if d.ocr_engine == "tesseract":
+        engine = (d.ocr_engine or "easyocr").strip().lower()
+        if engine == "tesseract":
             from .detection.ocr_detector import TesseractDetector
             detector = TesseractDetector(d)
+        elif engine == "paddleocr":
+            from .detection.paddle_detector import PaddleOCRDetector
+            detector = PaddleOCRDetector(d, device=d.sam_device)
         else:
             detector = EasyOCRDetector(d, gpu=d.sam_device.startswith("cuda"))
 
