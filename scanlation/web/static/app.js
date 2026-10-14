@@ -101,6 +101,7 @@ async function selectPage(index) {
   renderOverlay();
   renderBubbleList();
   syncPanel();
+  loadMetrics(index);
   $('hint').textContent =
     `หน้า ${index} · ${state.page.width}×${state.page.height} · ${state.page.bubbles.length} บอลลูน`;
 }
@@ -538,3 +539,114 @@ async function preparePage(index) {
 /* ------------------------- boot -------------------------------- */
 setTool('select');
 loadProject().catch((e) => toast('โหลดโปรเจกต์ไม่สำเร็จ: ' + e.message, true));
+
+/* ======================= Monitoring Dashboard =======================
+ * ดึง metrics ของหน้าที่เลือกจาก /api/metrics/<index> แล้วเรนเดอร์เป็น
+ * การ์ดต่อสเตจ + รายการ issues + ภาพวินิจฉัย (mask/overlay)
+ * ================================================================== */
+
+const STAGE_META = {
+  detection:   { ico: '🔍', name: 'Detection (OCR+SAM)' },
+  translation: { ico: '🌐', name: 'Translation (LLM)' },
+  inpainting:  { ico: '🧽', name: 'Inpainting (ลบข้อความ)' },
+  typesetting: { ico: '✍️', name: 'Typesetting (วาดคำไทย)' },
+};
+
+const ISSUE_SEV = {
+  // error = แดง, warn = เหลือง
+  NO_TEXT_DETECTED: 'error',
+  OVERSIZED_BUBBLE: 'error',
+  HIGH_MASK_COVERAGE: 'error',
+  EMPTY_MASK: 'error',
+  MISSING_TRANSLATION: 'error',
+  LEFTOVER_ENGLISH: 'error',
+  LOW_CONFIDENCE: 'warn',
+  UNRENDERED_BUBBLES: 'warn',
+};
+
+function fmtStageKV(stage, data) {
+  // แปลงข้อมูลของแต่ละสเตจเป็นแถว key->value ที่อ่านง่าย
+  const rows = [];
+  if (stage === 'detection') {
+    rows.push(['บล็อกข้อความ', data.text_blocks]);
+    rows.push(['บอลลูน', data.bubbles]);
+    if (data.low_confidence_blocks) rows.push(['OCR มั่นใจต่ำ', data.low_confidence_blocks]);
+    if (data.bubble_kinds) {
+      const kinds = Object.entries(data.bubble_kinds).map(([k, v]) => `${k}:${v}`).join(' ');
+      rows.push(['ประเภท', kinds]);
+    }
+  } else if (stage === 'translation') {
+    rows.push(['แปลแล้ว', `${data.translated}/${data.bubbles_total}`]);
+    if (data.missing) rows.push(['ขาดคำแปล', data.missing]);
+    if (data.leftover_english) rows.push(['ไทยปนอังกฤษ', data.leftover_english]);
+  } else if (stage === 'inpainting') {
+    if (data.status === 'skipped') rows.push(['สถานะ', 'ข้าม (ไม่มี mask)']);
+    else {
+      rows.push(['พิกเซลที่ลบ', (data.mask_pixels ?? 0).toLocaleString()]);
+      rows.push(['ครอบคลุมภาพ', `${data.coverage_pct ?? 0}%`]);
+    }
+  } else if (stage === 'typesetting') {
+    rows.push(['วาดคำแปลแล้ว', `${data.rendered}/${data.bubbles_total}`]);
+    if (data.unrendered) rows.push(['ยังไม่ได้วาด', data.unrendered]);
+  }
+  return rows;
+}
+
+async function loadMetrics(index) {
+  const body = $('dashBody');
+  const imgs = $('dashImages');
+  let m = null;
+  try {
+    m = await api(`/api/metrics/${index}`);
+  } catch (e) {
+    body.innerHTML = `<p class="muted small">ยังไม่มีข้อมูล metrics ของหน้านี้<br>(จะถูกสร้างอัตโนมัติหลังประมวลผลด้วยเวอร์ชันใหม่)</p>`;
+    imgs.classList.add('hidden');
+    return;
+  }
+
+  let html = '';
+  // การ์ดต่อสเตจ
+  for (const [key, meta] of Object.entries(STAGE_META)) {
+    const data = m.stages?.[key];
+    if (!data) continue;
+    const rows = fmtStageKV(key, data)
+      .map(([k, v]) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`).join('');
+    html += `<div class="stage-card"><div class="stage-title"><span class="ico">${meta.ico}</span>${meta.name}</div>${rows}</div>`;
+  }
+
+  // issues
+  const issues = m.issues || [];
+  if (issues.length === 0) {
+    html += `<div class="ok-badge">✅ ไม่พบปัญหาในหน้านี้</div>`;
+  } else {
+    html += `<div class="stage-card"><div class="stage-title"><span class="ico">⚠️</span>พบ ${issues.length} ประเด็น</div>` +
+      issues.map((it) => {
+        const sev = ISSUE_SEV[it.code] === 'warn' ? 'warn' : '';
+        return `<div class="issue ${sev}"><div class="code">${it.code}</div>${it.message}</div>`;
+      }).join('') + '</div>';
+  }
+  body.innerHTML = html;
+
+  // ภาพวินิจฉัย
+  const hasMask = m.artifacts?.mask;
+  const hasOverlay = m.artifacts?.overlay;
+  if (hasMask || hasOverlay) {
+    imgs.classList.remove('hidden');
+    if (hasMask) {
+      $('imgMask').src = `/monitoring/${index}/${hasMask}`;
+      $('linkMask').href = `/monitoring/${index}/${hasMask}`;
+    }
+    if (hasOverlay) {
+      $('imgOverlay').src = `/monitoring/${index}/${hasOverlay}`;
+      $('linkOverlay').href = `/monitoring/${index}/${hasOverlay}`;
+    }
+  } else {
+    imgs.classList.add('hidden');
+  }
+}
+
+// ปุ่มรีเฟรช metrics
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = $('btnRefreshMetrics');
+  if (btn) btn.onclick = () => state.pageIndex != null && loadMetrics(state.pageIndex);
+});

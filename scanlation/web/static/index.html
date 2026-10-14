@@ -68,6 +68,30 @@
       <ul id="pageList"></ul>
     </aside>
 
+    <!-- แดชบอร์ดตรวจสุขภาพ pipeline -->
+    <aside class="sidebar dashboard" id="dashboard">
+      <div class="dash-header">
+        <h3>📊 สุขภาพหน้านี้</h3>
+        <button class="btn tiny" id="btnRefreshMetrics" title="โหลด metrics ใหม่">↻</button>
+      </div>
+      <div id="dashBody" class="dash-body">
+        <p class="muted small">เลือกหน้าเพื่อดูสถานะการประมวลผล</p>
+      </div>
+      <div id="dashImages" class="dash-images hidden">
+        <h4>ภาพวินิจฉัย</h4>
+        <div class="dash-img-row">
+          <a id="linkMask" target="_blank" title="เปิดภาพ mask เต็ม">
+            <img id="imgMask" alt="mask" />
+            <span>มาสก์</span>
+          </a>
+          <a id="linkOverlay" target="_blank" title="เปิดภาพ overlay เต็ม">
+            <img id="imgOverlay" alt="overlay" />
+            <span>กรอบตรวจจับ</span>
+          </a>
+        </div>
+      </div>
+    </aside>
+
     <!-- พื้นที่แสดงภาพ + overlay -->
     <section class="stage">
       <div class="empty-state hidden" id="emptyState">

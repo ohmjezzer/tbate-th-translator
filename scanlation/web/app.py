@@ -48,6 +48,7 @@ from ..config import ScanlationConfig
 from ..schemas import BBox, BlockKind, Bubble, Page, TextBlock
 from ..utils import image_io
 from ..utils.logging_utils import get_logger
+from ..monitoring import MetricsCollector
 
 log = get_logger(__name__)
 
@@ -438,6 +439,33 @@ class PreviewServer:
             p = None
         return p.resolve() if p is not None else None
 
+    # ---- Monitoring ----------------------------------------------------------
+    def page_metrics(self, index: int) -> Dict[str, Any]:
+        """อ่าน metrics ของหน้า (ถ้ามีไฟล์)"""
+        collector = MetricsCollector(self.work_dir)
+        m = collector.load_page(index)
+        if m is None:
+            return {"error": f"ยังไม่มี metrics ของหน้าที่ {index} (อาจยังไม่ได้ประมวลผล)"}
+        return m.to_dict()
+
+    def metrics_summary(self) -> Dict[str, Any]:
+        """สรุป metrics ทุกหน้า (เฉพาะหน้าที่มีไฟล์)"""
+        collector = MetricsCollector(self.work_dir)
+        return collector.summary()
+
+    def monitoring_path(self, index: int, filename: str) -> Optional[Path]:
+        """คืน path ของไฟล์ใน .scanlation/monitoring/ (ตรวจสอบชื่อไฟล์ก่อน)"""
+        mon_dir = Path(self.work_dir) / "monitoring"
+        if not mon_dir.exists():
+            return None
+        # ป้องกัน path traversal
+        if ".." in filename or "/" in filename:
+            return None
+        cand = mon_dir / filename
+        if not cand.exists() or not cand.name.startswith(f"page-{index:04d}-"):
+            return None
+        return cand.resolve()
+
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -552,6 +580,32 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
         except Exception as exc:  # noqa: BLE001
             log.exception("ประมวลผลหน้า %d ล้มเหลว", index)
             return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+    @app.get("/api/metrics")
+    def api_metrics_summary():
+        """สรุป metrics ทุกหน้า"""
+        return jsonify(server.metrics_summary())
+
+    @app.get("/api/metrics/<int:index>")
+    def api_page_metrics(index: int):
+        """metrics ของหน้าที่ระบุ"""
+        data = server.page_metrics(index)
+        if "error" in data:
+            return jsonify(data), 404
+        return jsonify(data)
+
+    @app.get("/monitoring/<int:index>/<filename>")
+    def api_monitoring_file(index: int, filename: str):
+        """ส่งไฟล์ภาพวินิจฉัย (mask / overlay) ของหน้าที่ระบุ"""
+        path = server.monitoring_path(index, filename)
+        if path is None:
+            return jsonify({"error": "ไม่พบไฟล์วินิจฉัย"}), 404
+        try:
+            resp = send_file(str(path))
+        except FileNotFoundError:
+            return jsonify({"error": "ไฟล์หายไปจากดิสก์"}), 404
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.get("/media/<kind>/<int:index>")
     def api_media(kind: str, index: int):

@@ -35,6 +35,7 @@ from .translation import LLMTranslator, Translator, load_context
 from .typesetting import Typesetter
 from .utils import image_io
 from .utils.logging_utils import get_logger
+from .monitoring import MetricsCollector
 
 log = get_logger(__name__)
 
@@ -365,6 +366,16 @@ class ScanlationPipeline:
 
         # (4) Typesetting — วาดคำแปลไทยทับ
         final = self.typesetter.render(cleaned, page)
+
+        # (5) Monitoring — รวบรวม metrics + เขียนรายงานประจำหน้า
+        collector = MetricsCollector(self._work_path("."))
+        metrics = collector.begin_page(index=index, image_path=str(image_path))
+        collector.analyze_detection(metrics, page)
+        if do_translate:
+            collector.analyze_translation(metrics, page)
+        collector.analyze_inpainting(metrics, page, mask)
+        collector.analyze_typesetting(metrics, page)
+        collector.finalize_page(metrics, page=page, mask=mask, image=image)
 
         out_path: Optional[str] = None
         if save:
