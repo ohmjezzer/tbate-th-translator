@@ -128,6 +128,7 @@ async function selectPage(index) {
   renderBubbleList();
   syncPanel();
   loadMetrics(index);
+  showOutputInfo();
   updateStatus();
   $('hint').textContent =
     `หน้า ${index} · ${state.page.width}×${state.page.height} · ${state.page.bubbles.length} บอลลูน`;
@@ -571,14 +572,57 @@ async function savePage(silent = false) {
 
 async function renderPage() {
   if (!(await savePage(true))) return;
-  toast('กำลังเรนเดอร์ใหม่...');
+  const opts = compressOptions();
+  toast(opts.compress ? `กำลังเรนเดอร์ + บีบอัด (≤ ${opts.target_mb} MB)...` : 'กำลังเรนเดอร์ใหม่...');
   try {
-    const r = await api(`/api/page/${state.page.index}/render`, { method: 'POST' });
+    const r = await api(`/api/page/${state.page.index}/render`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    });
     state.page.media = r.media;
     if (!state.page.media[state.view]) { state.view = 'out'; $('viewSelect').value = 'out'; }
     refreshImage(true);
-    toast('เรนเดอร์ใหม่แล้ว ✓');
-  } catch (e) { toast('เรนเดอร์ไม่สำเร็จ: ' + e.message, true); }
+    state.page.output = Object.assign({}, state.page.output, {
+      exists: true,
+      size_human: r.info?.size_human,
+      under_target: r.info?.ok,
+    });
+    showOutputInfo();
+    if (state.pageIndex != null) loadMetrics(state.pageIndex);
+    const info = r.info || {};
+    if (info.compressed) {
+      toast(info.ok
+        ? `เรนเดอร์ + บีบอัดแล้ว ✓ ขนาด ${info.size_human}`
+        : `เรนเดอร์แล้ว แต่ยังเกินเป้า (ได้ ${info.size_human}) — ลองลดขนาดหรือย่อภาพ`,
+        !info.ok);
+    } else {
+      toast('เรนเดอร์ใหม่แล้ว ✓');
+    }
+  } catch (e) { toast('เรนเดอร์ไม่สำเร็จ: ' + (e.body?.error || e.message), true); }
+}
+
+/* อ่านตัวเลือก "ขนาดไฟล์/ฟอร์แมต" จาก topbar */
+function compressOptions() {
+  const mb = parseFloat($('targetMb') ? $('targetMb').value : '1');
+  const fmt = $('outFormat') ? $('outFormat').value : 'webp';
+  const noCompress = !(mb > 0);
+  return {
+    compress: !noCompress,
+    target_mb: noCompress ? 1 : mb,
+    format: fmt,
+  };
+}
+
+/* แสดงขนาดไฟล์ผลลัพธ์ปัจจุบันบนแถบสถานะ */
+function showOutputInfo() {
+  const el = $('outputInfo');
+  if (!el) return;
+  const o = state.page && state.page.output;
+  el.classList.remove('good', 'bad');
+  if (!o || !o.exists) { el.innerHTML = 'ยังไม่มีไฟล์ผลลัพธ์'; return; }
+  const mark = o.under_target === false ? '🔴' : '🟢';
+  el.innerHTML = `${mark} ไฟล์ผลลัพธ์: <b>${o.size_human || '-'}</b> / เป้า ${o.target_mb}MB`;
+  el.classList.add(o.under_target === false ? 'bad' : 'good');
 }
 
 async function addBubble(bbox, erase = false) {
@@ -694,9 +738,23 @@ document.addEventListener('keydown', (e) => {
   else if (e.key.toLowerCase() === 'e' && state.tool === 'brush') toggleBrushErase();
 });
 
+/* ------------------------- ตัวเลือกขนาดไฟล์ (compress) ---------- */
+async function loadOutputSettings() {
+  try {
+    const s = await api('/api/output-settings');
+    if ($('targetMb')) $('targetMb').value = s.compress ? String(s.target_mb) : '0';
+    if ($('outFormat')) $('outFormat').value = s.format || 'webp';
+  } catch (e) { /* ใช้ค่าดีฟอลต์ใน HTML */ }
+}
+if ($('targetMb')) $('targetMb').addEventListener('change', () => {
+  const mb = parseFloat($('targetMb').value);
+  toast(mb > 0 ? `จะบีบอัดผลลัพธ์ให้ไม่เกิน ${mb} MB เมื่อเรนเดอร์` : 'ปิดการบีบอัด (ไฟล์เต็มขนาด)');
+});
+
 /* ------------------------- boot -------------------------------- */
 setTool('select');
 updateStatus();
+loadOutputSettings();
 loadProject().catch((e) => toast('โหลดโปรเจกต์ไม่สำเร็จ: ' + e.message, true));
 
 /* ======================= Monitoring Dashboard =======================

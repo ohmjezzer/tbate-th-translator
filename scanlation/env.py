@@ -142,6 +142,15 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
     "SCANLATION_SFX_STROKE_RATIO":      ("typesetting", "sfx_stroke_ratio", _float),
     "SCANLATION_AUTO_CONTRAST":         ("typesetting", "auto_contrast", _bool),
     "SCANLATION_FIT_ATTEMPTS":          ("typesetting", "fit_attempts", _int),
+
+    # ---------------- output (บันทึก + บีบอัด) ----------------
+    "SCANLATION_OUTPUT_COMPRESS":           ("output", "compress", _bool),
+    "SCANLATION_OUTPUT_TARGET_MB":          ("output", "target_size_mb", _float),
+    "SCANLATION_OUTPUT_FORMAT":             ("output", "format", _str),
+    "SCANLATION_OUTPUT_MIN_QUALITY":        ("output", "min_quality", _int),
+    "SCANLATION_OUTPUT_MAX_QUALITY":        ("output", "max_quality", _int),
+    "SCANLATION_OUTPUT_ALLOW_DOWNSCALE":    ("output", "allow_downscale", _bool),
+    "SCANLATION_OUTPUT_MAX_DOWNSCALE_RATIO": ("output", "max_downscale_ratio", _float),
 }
 
 # ---------------------------------------------------------------------------
