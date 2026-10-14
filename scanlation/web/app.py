@@ -45,6 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from ..config import ScanlationConfig
+from ..inpainting import build_text_mask
 from ..schemas import BBox, BlockKind, Bubble, Page, TextBlock
 from ..utils import image_io
 from ..utils.logging_utils import get_logger
@@ -203,8 +204,14 @@ class PreviewServer:
 
     # ---- เพิ่ม / ลบบอลลูนด้วยมือ -----------------------------------------
     def add_bubble(self, index: int, bbox: List[float], kind: str = "speech",
-                   translation: str = "", source_text: str = "") -> Dict[str, Any]:
-        """เพิ่มบอลลูนใหม่ (วาดกรอบเองในหน้าเว็บ)"""
+                   translation: str = "", source_text: str = "",
+                   erase: bool = False) -> Dict[str, Any]:
+        """
+        เพิ่มบอลลูนใหม่ (วาดกรอบเองในหน้าเว็บ)
+
+        erase=True -> ลบข้อความอังกฤษเดิมในกรอบนี้ด้วย AI ทันที (ถ้ามี)
+        (ช่วยกรณี detection ตกหล่น: ผู้ใช้เพิ่มกรอบเองแล้วให้ระบบลบข้อความเดิมให้)
+        """
         p = self._page_json(index)
         if p is None:
             raise PageNotReady(index, self.run_command(index))
@@ -227,7 +234,18 @@ class PreviewServer:
         bubble.set_translation(translation or "")
         page.bubbles.append(bubble)
         page.save_json(p, include_mask=True)
-        return {"ok": True, "uid": uid, "saved": str(p)}
+
+        result: Dict[str, Any] = {"ok": True, "uid": uid, "saved": str(p)}
+        if erase:
+            # ลบข้อความเดิมที่ยังค้างในกรอบ (โหมด text-only: เก็บพื้นหลังไว้)
+            try:
+                erased = self.inpaint_box(index, box.as_list(), text_only=True)
+                result["erased"] = erased.get("ok", False)
+            except Exception as exc:  # noqa: BLE001 - การลบไม่ควรทำให้การเพิ่มล้ม
+                log.warning("ลบข้อความในกรอบ %s ไม่สำเร็จ: %s", uid, exc)
+                result["erased"] = False
+                result["erase_error"] = f"{type(exc).__name__}: {exc}"
+        return result
 
     def delete_bubble(self, index: int, uid: str) -> Dict[str, Any]:
         """ลบบอลลูนออกจากหน้า"""
@@ -282,13 +300,15 @@ class PreviewServer:
                         continue
         return mask
 
-    def inpaint_region(self, index: int, strokes: List[Dict], grow: int = 4,
-                       method: Optional[str] = None) -> Dict[str, Any]:
+    def _apply_inpaint_mask(self, index: int, mask: np.ndarray, grow: int = 4,
+                            method: Optional[str] = None,
+                            note: str = "") -> Dict[str, Any]:
         """
-        ลบพื้นที่ที่ผู้ใช้แปรงคลุม ด้วยโมเดล inpaint (LaMa/OpenCV/Median ตาม config)
-        แล้วเขียนทับภาพ cleaned (สำรอง .prev.png ไว้ให้ undo)
+        แกนกลางของการลบพื้นที่: รับ mask (พิกเซลภาพ) → inpaint → เขียนทับ cleaned
+        แล้วเรนเดอร์ใหม่ (สำรอง .prev.png ไว้ให้ undo)
 
-        method: ระบุชื่อวิธีใน InpaintingConfig.method (ถ้าไม่ระบุใช้ตาม config) — 'auto' ได้
+        ทั้งการแปรงลบ (strokes) และการลบในกรอบบอลลูน (box) จะเรียกเมธอดนี้ร่วมกัน
+        เพื่อให้พฤติกรรมเหมือนกันเป๊ะ (และแก้ที่เดียว)
         """
         import cv2
 
@@ -298,10 +318,12 @@ class PreviewServer:
                                f"ไม่พบภาพของหน้าที่ {index} (ต้องมีใน orig/ ก่อน)")
 
         image = image_io.load_image_rgb(base_path)
-        h, w = image.shape[:2]
-        mask = self._strokes_to_mask(strokes, (h, w))
-        if mask.sum() == 0:
-            return {"ok": False, "error": "ไม่มีพื้นที่ที่ถูกแปรง (mask ว่าง)"}
+        if mask.shape[:2] != image.shape[:2]:
+            mask = cv2.resize(mask, (image.shape[1], image.shape[0]),
+                              interpolation=cv2.INTER_NEAREST)
+        if int((mask > 0).sum()) == 0:
+            return {"ok": False, "error": "ไม่มีพื้นที่ให้ลบ (mask ว่าง)"}
+
         if grow > 0:
             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1,) * 2)
             mask = cv2.dilate(mask, k, iterations=1)
@@ -313,10 +335,9 @@ class PreviewServer:
             cfg.inpainting.method = method
         method_name = ScanlationPipeline.resolve_inpainter_method(
             cfg.inpainting.method, allow_fallback=getattr(cfg.inpainting, "auto_fallback", True))
-        pipeline = ScanlationPipeline(cfg)
-        inpainter = pipeline.inpainter
-        log.info("[preview] inpaint หน้า %d ด้วย '%s' (%d px ที่แปรง)",
-                 index, method_name, int((mask > 0).sum()))
+        inpainter = ScanlationPipeline(cfg).inpainter
+        log.info("[preview] inpaint หน้า %d ด้วย '%s' (%d px%s)",
+                 index, method_name, int((mask > 0).sum()), f" — {note}" if note else "")
 
         cleaned = inpainter.inpaint(image, mask)
 
@@ -327,18 +348,79 @@ class PreviewServer:
         if dest.exists():
             prev.write_bytes(dest.read_bytes())
         elif base_path.resolve() != dest.resolve():
-            # ยังไม่มี cleaned -> สำรองภาพฐานไว้ (ต้นฉบับ) เพื่อ undo ได้
             prev.write_bytes(Path(base_path).read_bytes())
 
         image_io.save_image(cleaned, dest)
 
-        # เรนเดอร์ผลลัพธ์ใหม่ทันที เพื่อให้เห็นภาพรวม (ข้อความไทย + พื้นหลังที่ลบแล้ว)
+        # เรนเดอร์ผลลัพธ์ใหม่ทันที เพื่อให้เห็นภาพรวม
         try:
             self.render_page(index)
         except Exception as exc:  # noqa: BLE001
             log.warning("เรนเดอร์หลัง inpaint ไม่สำเร็จ: %s", exc)
 
-        return {"ok": True, "method": method_name, "media": self._media_urls(index)}
+        return {"ok": True, "method": method_name,
+                "erased_px": int((mask > 0).sum()),
+                "media": self._media_urls(index)}
+
+    def inpaint_region(self, index: int, strokes: List[Dict], grow: int = 4,
+                       method: Optional[str] = None) -> Dict[str, Any]:
+        """
+        ลบพื้นที่ที่ผู้ใช้แปรงคลุม ด้วยโมเดล inpaint (LaMa/OpenCV/Median ตาม config)
+        แล้วเขียนทับภาพ cleaned (สำรอง .prev.png ไว้ให้ undo)
+
+        method: ระบุชื่อวิธีใน InpaintingConfig.method (ถ้าไม่ระบุใช้ตาม config) — 'auto' ได้
+        """
+        base_path = self._base_image_path(index)
+        if base_path is None or not base_path.exists():
+            raise PageNotReady(index, self.run_command(index),
+                               f"ไม่พบภาพของหน้าที่ {index} (ต้องมีใน orig/ ก่อน)")
+        h, w = image_io.load_image_rgb(base_path).shape[:2]
+        mask = self._strokes_to_mask(strokes, (h, w))
+        return self._apply_inpaint_mask(index, mask, grow=grow, method=method,
+                                        note=f"แปรง {len(strokes)} เส้น")
+
+    def inpaint_box(self, index: int, bbox: List[float], grow: int = 4,
+                    method: Optional[str] = None, text_only: bool = True,
+                    fallback_full: bool = True) -> Dict[str, Any]:
+        """
+        ลบ "ข้อความที่ตกค้าง" ภายในกรอบที่กำหนด (ใช้เมื่อ detection จับไม่ครบ
+        แล้วผู้ใช้เพิ่มบอลลูนเอง หรือวาดกรอบเอง)
+
+        text_only=True → ลบเฉพาะพิกเซลที่เป็นตัวอักษร (เก็บพื้นหลัง)
+        fallback_full=True → ถ้าหา "ตัวอักษร" ในกรอบไม่เจอเลย ให้ลบทั้งกรอบแทน
+        """
+        import cv2
+
+        base_path = self._base_image_path(index)
+        if base_path is None or not base_path.exists():
+            raise PageNotReady(index, self.run_command(index),
+                               f"ไม่พบภาพของหน้าที่ {index} (ต้องมีใน orig/ ก่อน)")
+        image = image_io.load_image_rgb(base_path)
+        h, w = image.shape[:2]
+
+        x0, y0, x1, y1 = [int(round(float(v))) for v in bbox]
+        x0, x1 = sorted((max(0, min(x0, w)), max(0, min(x1, w))))
+        y0, y1 = sorted((max(0, min(y0, h)), max(0, min(y1, h))))
+        if x1 - x0 < 2 or y1 - y0 < 2:
+            return {"ok": False, "error": "กรอบเล็กเกินไป"}
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        if text_only:
+            # ใช้ตรรกะสร้าง mask จาก "บรรทัดข้อความ" ชุดเดียวกับสเตจ Inpainting
+            try:
+                from ..schemas import BlockKind, Bubble, TextBlock
+                box = BBox(x0, y0, x1, y1)
+                tmp = Bubble(uid="box-erase", bbox=box, kind=BlockKind.UNKNOWN,
+                             blocks=[TextBlock(uid="box-erase-t0", bbox=box)])
+                mask = build_text_mask(image, [tmp], self.cfg.inpainting)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("สร้าง text-mask ในกรอบไม่สำเร็จ (%s) — ใช้ลบทั้งกรอบแทน", exc)
+                mask = np.zeros((h, w), dtype=np.uint8)
+        if int((mask > 0).sum()) == 0 and fallback_full:
+            mask[y0:y1, x0:x1] = 255
+
+        return self._apply_inpaint_mask(index, mask, grow=grow, method=method,
+                                        note=f"กรอบ [{x0},{y0},{x1},{y1}]")
 
     def undo_inpaint(self, index: int) -> Dict[str, Any]:
         """ย้อนการ inpaint ครั้งล่าสุด (คืนภาพ cleaned จาก .prev.png)"""
@@ -535,6 +617,7 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
                 index, bbox, kind=body.get("kind", "speech"),
                 translation=body.get("translation", ""),
                 source_text=body.get("source_text", ""),
+                erase=bool(body.get("erase", False)),
             ))
         except PageNotReady as exc:
             return jsonify(exc.to_dict()), 404
@@ -552,6 +635,14 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
         try:
             if op == "undo":
                 return jsonify(server.undo_inpaint(index))
+            if op == "box":
+                # ลบข้อความในกรอบ (ใช้เมื่อเพิ่มบอลลูนเอง/วาดกรอบเอง)
+                return jsonify(server.inpaint_box(
+                    index, body.get("bbox") or [0, 0, 0, 0],
+                    grow=int(body.get("grow", 4)),
+                    method=body.get("method") or None,
+                    text_only=bool(body.get("text_only", True)),
+                ))
             return jsonify(server.inpaint_region(
                 index, body.get("strokes") or [],
                 grow=int(body.get("grow", 4)),

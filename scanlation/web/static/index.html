@@ -18,47 +18,57 @@
         </select>
       </label>
       <label><input type="checkbox" id="showOverlay" checked /> แสดงกรอบแก้ไข</label>
-      <button id="btnSave" class="btn">💾 บันทึก</button>
-      <button id="btnRender" class="btn primary">⚡ บันทึก &amp; เรนเดอร์ใหม่</button>
+      <button id="btnHelp" class="btn" title="เปิดคู่มือการใช้งาน">❓ ช่วยเหลือ</button>
+      <button id="btnSave" class="btn" title="บันทึกคำแปล/ค่าที่แก้ (Ctrl+S)">💾 บันทึก</button>
+      <button id="btnRender" class="btn primary" title="บันทึกแล้ววาดภาพใหม่ทันที">⚡ บันทึก &amp; เรนเดอร์ใหม่</button>
     </div>
   </header>
 
   <!-- แถบเครื่องมือ -->
   <div class="toolbar" id="toolbar">
     <div class="toolgroup">
-      <button class="tool active" id="toolSelect" data-tool="select">✋ เลือก/ย้าย</button>
-      <button class="tool" id="toolBrush" data-tool="brush">🖌 แปรงลบพื้นหลัง</button>
-      <button class="tool" id="toolAdd" data-tool="add">➕ เพิ่มบอลลูน</button>
+      <span class="grouplabel">เครื่องมือ</span>
+      <button class="tool active" id="toolSelect" data-tool="select" title="เลือก/ย้าย/ปรับขนาดบอลลูน (คีย์ 1)">✋ เลือก/ย้าย</button>
+      <button class="tool" id="toolBrush" data-tool="brush" title="แปรงลบข้อความ/พื้นหลังที่ตกค้าง (คีย์ 2)">🖌 แปรงลบพื้นหลัง</button>
+      <button class="tool" id="toolAdd" data-tool="add" title="ลากกรอบเพื่อเพิ่มบอลลูนที่ระบบจับไม่เจอ (คีย์ 3)">➕ เพิ่มบอลลูน</button>
     </div>
 
     <div class="toolgroup hidden" id="brushControls">
       <label class="inline">ขนาดแปรง: <b id="brushSizeVal">24</b>px
         <input type="range" id="brushSize" min="4" max="120" value="24" />
       </label>
-      <button class="btn primary" id="btnApplyInpaint">🪄 ลบพื้นที่ที่แปรง (AI)</button>
-      <button class="btn" id="btnClearBrush">✕ ล้างที่แปรง</button>
-      <button class="btn" id="btnUndoInpaint" title="ย้อนการลบครั้งล่าสุด">↶ Undo ลบ</button>
-      <span class="muted small">วาดทับส่วนที่อยากลบ แล้วกด "ลบพื้นที่ที่แปรง"</span>
+      <button class="btn tiny" id="brushModeErase" title="สลับเป็นโหมดลบเส้นที่แปรงไว้ (คีย์ E)">🧽 ลบเส้นที่แปรง</button>
+      <button class="btn tiny" id="btnUndoStroke" title="ลบเส้นแปรงล่าสุด (Ctrl+Z)">↶ ลบเส้นล่าสุด</button>
+      <button class="btn tiny" id="btnClearBrush" title="ล้างเส้นแปรงทั้งหมด">✕ ล้างทั้งหมด</button>
+      <span class="grouplabel">|</span>
+      <button class="btn primary" id="btnApplyInpaint" title="ให้ AI ลบพื้นที่สีแดงที่แปรงไว้">🪄 ลบพื้นที่ที่แปรง (AI)</button>
+      <button class="btn" id="btnUndoInpaint" title="ย้อนผลการลบครั้งล่าสุดกลับ">↶ Undo ลบ</button>
     </div>
 
     <div class="toolgroup hidden" id="addControls">
-      <span class="muted small">ลากบนภาพเพื่อวาดกรอบบอลลูนใหม่</span>
-      <label class="inline">ชนิด:
+      <span class="hintline">ลากบนภาพเพื่อวาดกรอบบอลลูนใหม่</span>
+      <label class="inline">ชนิดกล่อง:
         <select id="newKind">
           <option value="speech">คำพูด (speech)</option>
           <option value="narration">บรรยาย (narration)</option>
           <option value="sfx">เสียงเอฟเฟกต์ (sfx)</option>
         </select>
       </label>
+      <label class="inline chk-inline" title="ลบข้อความอังกฤษเดิมที่ค้างในกรอบนี้ด้วย AI ทันทีหลังสร้าง">
+        <input type="checkbox" id="newErase" checked /> ลบข้อความเดิมในกรอบ (AI)
+      </label>
     </div>
 
     <div class="spacer"></div>
     <div class="toolgroup">
-      <button class="btn danger small-btn" id="btnDeleteBubble" disabled>🗑 ลบบอลลูนที่เลือก</button>
-      <label class="inline">ลำดับการวาด:
-        <select id="zorder"><option value="id">ตาม id</option><option value="y">บน→ล่าง</option></select>
-      </label>
+      <button class="btn danger small-btn" id="btnDeleteBubble" disabled title="ลบบอลลูนที่เลือก (ปุ่ม Delete)">🗑 ลบบอลลูนที่เลือก</button>
     </div>
+  </div>
+
+  <!-- แถบสถานะ: บอกทีละขั้นว่าต้องทำอะไร (เปลี่ยนตามเครื่องมือที่เลือก) -->
+  <div class="statusbar" id="statusBar">
+    <span class="status-ico" id="statusIco">💡</span>
+    <span id="statusText">กำลังโหลดโปรเจกต์...</span>
   </div>
 
   <main class="layout">
@@ -109,6 +119,7 @@
         <img id="pageImage" alt="page" />
         <div id="overlay" class="overlay"></div>
         <canvas id="brushCanvas" class="brush-canvas"></canvas>
+        <div class="brush-cursor" id="brushCursor"></div>
       </div>
       <div class="hint" id="hint">เลือกหน้าจากด้านซ้ายเพื่อเริ่มแก้ไข</div>
     </section>
@@ -152,6 +163,47 @@
       </div>
     </aside>
   </main>
+
+  <!-- ม็อดัลช่วยเหลือ: อธิบายเครื่องมือ + ขั้นตอนใช้งาน -->
+  <div class="modal-backdrop hidden" id="helpModal">
+    <div class="modal">
+      <h2>📖 วิธีใช้งานหน้า Preview</h2>
+      <p class="muted small">หน้านี้ใช้ตรวจและแก้ผลการแปลก่อนส่งงาน — ทุกอย่างแก้ได้ด้วยเมาส์</p>
+
+      <h3>✋ 1) เลือก / ย้ายบอลลูน</h3>
+      <ol>
+        <li>คลิกบอลลูนในภาพเพื่อเลือก (กรอบจะเปลี่ยนเป็นสีเขียว)</li>
+        <li><b>ลาก</b>ตัวกรอบเพื่อย้ายตำแหน่ง · <b>ลากมุมขวาล่าง</b>เพื่อปรับขนาด</li>
+        <li>แก้คำแปลในช่องด้านขวา · ปรับฟอนต์/สี/จัดชิดได้</li>
+        <li>ลบบอลลูน: กดปุ่ม <span class="kbd">Delete</span> หรือปุ่ม 🗑</li>
+      </ol>
+
+      <h3>🖌 2) แปรงลบพื้นหลัง / ข้อความตกค้าง</h3>
+      <ol>
+        <li>เลือกเครื่องมือ "แปรงลบพื้นหลัง" แล้ว <b>วาดทับ</b>ส่วนที่อยากลบ (จะเห็นสีแดง)</li>
+        <li>กด <b>🪄 ลบพื้นที่ที่แปรง (AI)</b> → AI จะลบให้เนียน</li>
+        <li>กด <b>↶ Undo ลบ</b> เพื่อย้อนกลับได้ทันที</li>
+        <li>วาดผิด? ใช้ <b>🧽 ลบเส้นที่แปรง</b> หรือ <b>↶ ลบเส้นล่าสุด</b> ก่อนกดลบจริง</li>
+      </ol>
+      <div class="tip">💡 ถ้าลบแล้วได้ไม่เนียน ลอง<b>แปรงให้คลุมตัวอักษรกว้างขึ้นเล็กน้อย</b> แล้วลบใหม่</div>
+
+      <h3>➕ 3) เพิ่มบอลลูน (กรณีระบบจับข้อความไม่เจอ)</h3>
+      <ol>
+        <li>เลือกเครื่องมือ "เพิ่มบอลลูน" แล้ว <b>ลากวาดกรอบ</b>ครอบข้อความที่ตกหล่น</li>
+        <li>ติ๊ก <b>"ลบข้อความเดิมในกรอบ (AI)"</b> เพื่อให้ระบบลบอังกฤษเดิมให้อัตโนมัติ</li>
+        <li>จากนั้นพิมพ์คำแปลไทยในช่องด้านขวาได้เลย</li>
+      </ol>
+
+      <h3>⌨️ คีย์ลัด</h3>
+      <ul>
+        <li><span class="kbd">1</span> เลือก/ย้าย · <span class="kbd">2</span> แปรง · <span class="kbd">3</span> เพิ่มบอลลูน</li>
+        <li><span class="kbd">Ctrl</span>+<span class="kbd">S</span> บันทึก · <span class="kbd">Ctrl</span>+<span class="kbd">Z</span> ลบเส้นแปรงล่าสุด</li>
+        <li><span class="kbd">Esc</span> ยกเลิกการวาด · <span class="kbd">Delete</span> ลบบอลลูนที่เลือก</li>
+      </ul>
+
+      <div class="close-row"><button class="btn primary" id="btnHelpClose">เข้าใจแล้ว ✔</button></div>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
   <script src="/static/app.js"></script>
