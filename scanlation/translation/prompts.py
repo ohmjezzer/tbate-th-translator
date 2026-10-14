@@ -103,14 +103,20 @@ def build_system_prompt(context) -> str:
 
 
 def build_user_prompt(bubbles: List[Bubble], target_lang: str = "Thai",
-                      page_summary: str | None = None) -> str:
+                      page_summary: str | None = None,
+                      repair_note: str | None = None) -> str:
     """
     สร้าง user prompt ที่มี "ข้อความทั้งหมดในหน้าเดียว"
     → ให้ LLM เห็นบริบททั้งหน้า จะได้แปลสอดคล้องกัน (เช่น สรรพนามไม่งง)
+
+    repair_note: ใช้ตอน "รอบซ่อม" — แนบคำกำชับพิเศษ (ห้ามเว้น id / ห้ามเหลืออังกฤษ)
     """
     lines: List[str] = []
     if page_summary:
         lines.append(f"[บริบทหน้าก่อน/สรุปเรื่อง] {page_summary}\n")
+    if repair_note:
+        lines.append(repair_note)
+        lines.append("")
 
     lines.append(f"จงแปลข้อความต่อไปนี้เป็น{target_lang} "
                  f"โดยคงค่า id ไว้ให้ครบทุกบรรทัด:")

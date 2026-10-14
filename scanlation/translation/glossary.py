@@ -66,11 +66,30 @@ class Glossary:
         """
         Post-check: ถ้า LLM แปลคำเฉพาะผิด ลองบังคับแทนด้วยคำที่กำหนดไว้
         (ใช้เท่าที่ปลอดภัย — เตือนผู้ใช้ให้ตรวจซ้ำอีกครั้ง)
+
+        ★ แทนคำที่ "ยาวก่อน" เสมอ (longest-first)
+
+        ทำไมสำคัญ: เดิมไล่แทนตามลำดับใน dict ทำให้คำที่ซ้อนกันอย่าง
+        "Mana" กับ "Mana Core" ถูกแทนผิดลำดับ -> เหลือ "มานา Core" ซึ่งเป็น
+        ไทยปนอังกฤษ (บั๊กที่พบใน sandbox) เรียงยาว->สั้นทำให้ "Mana Core"
+        ถูกแทนทั้งวลีก่อน แล้ว "Mana" ที่เหลือจึงค่อยถูกแทนทีหลัง
         """
-        for src, th in self.entries.items():
+        for src in sorted(self.entries, key=len, reverse=True):
+            th = self.entries[src]
             if src and src in text and th not in text:
                 text = text.replace(src, th)
         return text
+
+    def allowed_latin(self) -> List[str]:
+        """
+        คำอังกฤษที่ "อนุญาต" ให้เหลือในคำแปลได้ = คำศัพท์เฉพาะที่มีค่าแปลเป็นอังกฤษเอง
+        (เช่นชื่อเว็บ "Vortex Scans") — ใช้ตรวจว่า "ไทยปนอังกฤษ" จริงหรือไม่
+        """
+        out = []
+        for src, th in self.entries.items():
+            if th and all(not ("ก" <= c <= "๙") for c in th):
+                out.append(th)
+        return out
 
     @staticmethod
     def from_json(path: str | Path) -> "Glossary":

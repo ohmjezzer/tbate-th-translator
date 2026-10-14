@@ -126,6 +126,9 @@ ENV_MAP: Dict[str, Tuple[str, str, Callable[[str], Any]]] = {
     "SCANLATION_TRANSLATION_CACHE":      ("translation", "cache_path", _str),
     "SCANLATION_TRANSLATION_MAX_RETRIES": ("translation", "max_retries", _int),
     "SCANLATION_TRANSLATION_TIMEOUT":    ("translation", "timeout", _float),
+    "SCANLATION_TRANSLATION_BATCH_SIZE": ("translation", "batch_size", _int),
+    "SCANLATION_TRANSLATION_REPAIR_PASSES": ("translation", "repair_passes", _int),
+    "SCANLATION_TRANSLATION_ON_MISSING": ("translation", "on_missing", _str),
     "SCANLATION_TRANSLATION_BASE_URL":   ("translation", "base_url", _str),
 
     # ---------------- typesetting ----------------
