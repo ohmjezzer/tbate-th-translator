@@ -23,6 +23,8 @@ requests>=2.31
 # --- OCR ---
 easyocr>=1.7                 # ค่าเริ่มต้นของโปรเจกต์
 pytesseract>=0.3.10          # ทางเลือกสำรอง (ต้อง apt-get install tesseract-ocr ด้วย)
+# paddlepaddle>=2.6          # ★ ทางเลือกที่แม่นสุด (แนะนำสำหรับมังงะอังกฤษ):
+# paddleocr>=2.7             #   pip install paddlepaddle paddleocr แล้วตั้ง SCANLATION_OCR_ENGINE=paddleocr
 
 # --- LLM (Translation) ---
 anthropic>=0.34              # Claude 3.5 Sonnet / Claude 3.7

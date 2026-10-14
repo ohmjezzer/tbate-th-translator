@@ -37,7 +37,7 @@ class PathConfig:
 @dataclass
 class DetectionConfig:
     # --- OCR ---
-    ocr_engine: str = "easyocr"          # "easyocr" | "tesseract"
+    ocr_engine: str = "easyocr"          # "easyocr" | "paddleocr" (แม่นสุด แนะนำ) | "tesseract"
     ocr_langs: tuple = ("en",)
     ocr_min_confidence: float = 0.40     # กรองคำที่มั่นใจต่ำ
     ocr_group_by: str = "line"           # "line" (แนะนำ) = รวมคำเป็นบรรทัด | "block" = พฤติกรรมเดิม
