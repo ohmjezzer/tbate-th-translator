@@ -46,6 +46,13 @@ import numpy as np
 
 from ..config import ScanlationConfig
 from ..inpainting import build_text_mask
+from ..utils.image_compressor import (
+    compress_image_file,
+    ext_for,
+    human_size,
+    normalize_format,
+    target_bytes_from_mb,
+)
 from ..schemas import BBox, BlockKind, Bubble, Page, TextBlock
 from ..utils import image_io
 from ..utils.logging_utils import get_logger
@@ -173,8 +180,27 @@ class PreviewServer:
             "index": index,
             "width": width, "height": height,
             "media": self._media_urls(index),
+            "output": self._output_info(index),
             "bubbles": bubbles,
         }
+
+    def _output_info(self, index: int) -> Dict[str, Any]:
+        """ข้อมูลไฟล์ผลลัพธ์ (ขนาดจริง + เป้าหมายที่ตั้งไว้) ให้ UI แสดงผล"""
+        o = self.cfg.output
+        target = target_bytes_from_mb(getattr(o, "target_size_mb", 1.0))
+        f = _find_file(self.output_dir, index)
+        info: Dict[str, Any] = {
+            "exists": f is not None,
+            "target_mb": float(getattr(o, "target_size_mb", 1.0)),
+            "format": str(getattr(o, "format", "webp")),
+            "compress": bool(getattr(o, "compress", True)),
+        }
+        if f is not None and f.exists():
+            size = f.stat().st_size
+            info.update({"path": f.name, "size_bytes": size,
+                         "size_human": human_size(size),
+                         "under_target": size <= target})
+        return info
 
     def save_page(self, index: int, payload: Dict[str, Any]) -> Dict[str, Any]:
         """บันทึกคำแปล + ค่าที่แก้ (จาก frontend) กลับลงไฟล์ JSON"""
@@ -442,8 +468,27 @@ class PreviewServer:
         return {"ok": True, "media": self._media_urls(index)}
 
     # ---- เรนเดอร์ใหม่ -----------------------------------------------------
-    def render_page(self, index: int) -> Dict[str, Any]:
-        """วาดข้อความตามคำแปล/ค่าที่แก้ แล้วเขียนทับ out/page-XXXX.png"""
+    def _cleanup_stale_outputs(self, index: int, keep: Path) -> None:
+        """ลบไฟล์ผลลัพธ์เดิมของหน้าเดียวกันที่มีนามสกุลอื่น (กันไฟล์เก่าค้าง)"""
+        for f in self.output_dir.glob(f"*{index:04d}*"):
+            if f.suffix.lower() in _IMAGE_EXTS and f.resolve() != keep.resolve():
+                try:
+                    f.unlink()
+                    log.info("[preview] ลบไฟล์ผลลัพธ์เดิมทิ้ง: %s", f.name)
+                except OSError:
+                    pass
+
+    def render_page(self, index: int, target_mb: Optional[float] = None,
+                    fmt: Optional[str] = None, compress: Optional[bool] = None
+                    ) -> Dict[str, Any]:
+        """
+        วาดข้อความตามคำแปล/ค่าที่แก้ แล้วเขียนทับไฟล์ผลลัพธ์ใน out/
+
+        target_mb / fmt / compress : override ค่าจาก config เฉพาะครั้งนี้ (จาก UI)
+            - target_mb = ขนาดสูงสุดต่อไฟล์ (MB)
+            - fmt       = "webp" | "jpeg" | "png" | "keep"
+            - compress  = False เพื่อไม่บีบอัดเลย
+        """
         p = self._page_json(index)
         if p is None:
             raise PageNotReady(index, self.run_command(index))
@@ -463,9 +508,48 @@ class PreviewServer:
         ts = Typesetter(self.cfg.typesetting)
         out = ts.render(image, page)
 
-        out_path = self.output_dir / f"page-{index:04d}.png"
+        # --- กำหนดฟอร์แมต/นามสกุลผลลัพธ์ ---
+        o = self.cfg.output
+        raw_fmt = str(fmt if fmt is not None else getattr(o, "format", "webp")).strip().lower()
+        ext = ".png" if raw_fmt == "keep" else ext_for(raw_fmt)
+        out_path = self.output_dir / f"page-{index:04d}{ext}"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         image_io.save_image(out, out_path)
-        return {"ok": True, "out": str(out_path), "media": self._media_urls(index)}
+
+        # --- บีบอัดตามขนาดเป้าหมาย (ถ้าเปิด) ---
+        info: Dict[str, Any] = {"compressed": False}
+        do_compress = bool(getattr(o, "compress", True)) if compress is None else bool(compress)
+        if do_compress:
+            tgt_mb = float(target_mb if target_mb is not None
+                           else getattr(o, "target_size_mb", 1.0))
+            use_fmt = (out_path.suffix.lstrip(".") or "webp") if raw_fmt == "keep" \
+                else normalize_format(raw_fmt)
+            try:
+                res = compress_image_file(
+                    out_path, target_bytes_from_mb(tgt_mb), fmt=use_fmt,
+                    min_quality=int(getattr(o, "min_quality", 40)),
+                    max_quality=int(getattr(o, "max_quality", 92)),
+                    allow_downscale=bool(getattr(o, "allow_downscale", True)),
+                    max_downscale_ratio=float(getattr(o, "max_downscale_ratio", 0.6)),
+                )
+                out_path = Path(res.path)
+                info = {
+                    "compressed": True,
+                    "ok": res.ok,
+                    "size_bytes": res.size_bytes,
+                    "size_human": human_size(res.size_bytes),
+                    "quality": res.quality,
+                    "scale": res.scale,
+                    "target_mb": tgt_mb,
+                    "format": res.format,
+                }
+            except Exception as exc:  # noqa: BLE001 - บีบอัดล้มไม่ควรทำให้เรนเดอร์ล้ม
+                log.warning("บีบอัดผลลัพธ์หน้า %d ไม่สำเร็จ: %s", index, exc)
+                info = {"compressed": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        self._cleanup_stale_outputs(index, out_path)
+        return {"ok": True, "out": str(out_path), "info": info,
+                "media": self._media_urls(index)}
 
     # ---- ประมวลผลหน้าจาก UI (Detection→Translate→Inpaint→Typeset) --------
     def prepare_page(self, index: int, pipeline=None) -> Dict[str, Any]:
@@ -593,8 +677,15 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
 
     @app.post("/api/page/<int:index>/render")
     def api_render_page(index: int):
+        """เรนเดอร์ใหม่ + บีบอัด: รับ {"target_mb":1.0,"format":"webp","compress":true} ได้"""
+        body = request.get_json(silent=True) or {}
         try:
-            return jsonify(server.render_page(index))
+            return jsonify(server.render_page(
+                index,
+                target_mb=body.get("target_mb"),
+                fmt=body.get("format"),
+                compress=body.get("compress"),
+            ))
         except PageNotReady as exc:
             return jsonify(exc.to_dict()), 404
         except FileNotFoundError as exc:
@@ -671,6 +762,20 @@ def create_app(cfg: Optional[ScanlationConfig] = None):
         except Exception as exc:  # noqa: BLE001
             log.exception("ประมวลผลหน้า %d ล้มเหลว", index)
             return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+    @app.get("/api/output-settings")
+    def api_output_settings():
+        """ค่าตั้งการบันทึก/บีบอัดปัจจุบัน (ให้ UI ใช้เป็นค่าเริ่มต้น)"""
+        o = server.cfg.output
+        return jsonify({
+            "compress": bool(getattr(o, "compress", True)),
+            "target_mb": float(getattr(o, "target_size_mb", 1.0)),
+            "format": str(getattr(o, "format", "webp")),
+            "min_quality": int(getattr(o, "min_quality", 40)),
+            "max_quality": int(getattr(o, "max_quality", 92)),
+            "allow_downscale": bool(getattr(o, "allow_downscale", True)),
+            "max_downscale_ratio": float(getattr(o, "max_downscale_ratio", 0.6)),
+        })
 
     @app.get("/api/metrics")
     def api_metrics_summary():

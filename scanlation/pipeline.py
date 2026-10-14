@@ -34,6 +34,14 @@ from .schemas import Page
 from .translation import LLMTranslator, Translator, load_context
 from .typesetting import Typesetter
 from .utils import image_io
+from .utils.image_compressor import (
+    compress_array_to_file,
+    compress_image_file,
+    ext_for,
+    human_size,
+    normalize_format,
+    target_bytes_from_mb,
+)
 from .utils.logging_utils import get_logger
 from .monitoring import MetricsCollector
 
@@ -386,9 +394,43 @@ class ScanlationPipeline:
             out_path = str(self._output_path(image_path, index))
             image_io.save_image(final, out_path)
             log.info("บันทึกผลลัพธ์ -> %s", out_path)
+            out_path = self._maybe_compress(out_path)
 
         return ScanlationResult(page_index=index, input_path=str(image_path),
                                 output_path=out_path, page=page)
+
+    # ------------------------------------------------------------------
+    # บันทึกผลลัพธ์ + บีบอัดให้ไม่เกินขนาดที่กำหนด (ตาม cfg.output)
+    # ------------------------------------------------------------------
+    def _maybe_compress(self, out_path: str) -> str:
+        """
+        บีบอัดไฟล์ผลลัพธ์ให้ไม่เกิน cfg.output.target_size_mb (ถ้าเปิดใช้)
+
+        คืนค่า path สุดท้าย (นามสกุลอาจเปลี่ยนตาม cfg.output.format)
+        """
+        o = self.cfg.output
+        if not getattr(o, "compress", False):
+            return out_path
+        raw_fmt = str(getattr(o, "format", "webp")).strip().lower()
+        # "keep" = คงนามสกุล/ฟอร์แมตเดิมของไฟล์ (ไม่บังคับเปลี่ยนเป็น webp)
+        fmt = (Path(out_path).suffix.lstrip(".") or "webp") if raw_fmt == "keep" \
+            else normalize_format(raw_fmt)
+        target = target_bytes_from_mb(getattr(o, "target_size_mb", 1.0))
+        try:
+            res = compress_image_file(
+                out_path, target, fmt=fmt,
+                min_quality=int(getattr(o, "min_quality", 40)),
+                max_quality=int(getattr(o, "max_quality", 92)),
+                allow_downscale=bool(getattr(o, "allow_downscale", True)),
+                max_downscale_ratio=float(getattr(o, "max_downscale_ratio", 0.6)),
+            )
+            if not res.ok:
+                log.warning("บีบอัดแล้วยังเกินเป้า %.2f MB (ได้ %s) — ลองลด target หรือย่อขนาดเพิ่ม",
+                            o.target_size_mb, human_size(res.size_bytes))
+            return str(res.path)
+        except Exception as exc:  # noqa: BLE001 - บีบอัดล้มไม่ควรทำให้ทั้ง pipeline ล้ม
+            log.warning("บีบอัดผลลัพธ์ไม่สำเร็จ (%s): %s", out_path, exc)
+            return out_path
 
     # ------------------------------------------------------------------
     # ประมวลผลหลายหน้า / ทั้งเรื่อง
@@ -449,7 +491,11 @@ class ScanlationPipeline:
     def _output_path(self, image_path: Path, index: int) -> Path:
         out_dir = Path(self.cfg.paths.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        return out_dir / f"page-{index:04d}.png"
+        o = self.cfg.output
+        # เลือกนามสกุลตามฟอร์แมตผลลัพธ์ (ถ้า "keep" ให้คง .png เดิม)
+        fmt = getattr(o, "format", "webp")
+        ext = ".png" if str(fmt).lower() == "keep" else ext_for(fmt)
+        return out_dir / f"page-{index:04d}{ext}"
 
     def _dump_work(self, page: Page, stage: str) -> None:
         try:

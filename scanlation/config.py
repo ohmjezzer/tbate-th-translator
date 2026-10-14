@@ -156,7 +156,27 @@ class DownloadConfig:
 
 
 # ---------------------------------------------------------------------------
-# 7) รวมทุกอย่าง
+# 7) Output — การบันทึกไฟล์ผลลัพธ์ + บีบอัดขนาดไฟล์
+# ---------------------------------------------------------------------------
+@dataclass
+class OutputConfig:
+    """
+    ตั้งค่าการบันทึกภาพผลลัพธ์ (ไฟล์ใน out/) รวมถึงการบีบอัดให้ไม่เกินขนาดที่กำหนด
+
+    ค่าดีฟอลต์: บีบอัดเปิดไว้ และจำกัดไฟล์ไม่เกิน 1 MB
+    """
+
+    compress: bool = True                 # เปิดการบีบอัดอัตโนมัติเมื่อบันทึกผลลัพธ์
+    target_size_mb: float = 1.0           # ขนาดสูงสุดต่อไฟล์ (MB) — ดีฟอลต์ 1 MB
+    format: str = "webp"                  # "webp" | "jpeg" | "png" | "keep" (คงนามสกุลเดิม)
+    min_quality: int = 40                 # quality ต่ำสุดที่ยอมรับ (ต่ำกว่านี้ไม่ลดแล้ว)
+    max_quality: int = 92                 # quality สูงสุด (เริ่มค้นหาจากค่านี้)
+    allow_downscale: bool = True          # ถ้าลด quality ไม่พอ ให้ย่อขนาดภาพด้วย
+    max_downscale_ratio: float = 0.6      # ย่อได้ไม่ต่ำกว่านี้ของขนาดเดิม (0.6 = 60%)
+
+
+# ---------------------------------------------------------------------------
+# 8) รวมทุกอย่าง
 # ---------------------------------------------------------------------------
 @dataclass
 class ScanlationConfig:
@@ -166,6 +186,7 @@ class ScanlationConfig:
     inpainting: InpaintingConfig = field(default_factory=InpaintingConfig)
     translation: TranslationConfig = field(default_factory=TranslationConfig)
     typesetting: TypesettingConfig = field(default_factory=TypesettingConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
 
     # ---- serialization ---------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:

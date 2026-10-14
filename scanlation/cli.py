@@ -42,6 +42,13 @@ def _load_config(path: str | None) -> ScanlationConfig:
 
 def cmd_run(args) -> int:
     cfg = _load_config(args.config)
+    # ตัวเลือกบีบอัดจาก CLI (ทับค่า config)
+    if getattr(args, "no_compress", False):
+        cfg.output.compress = False
+    if getattr(args, "target_mb", None) is not None:
+        cfg.output.target_size_mb = float(args.target_mb)
+    if getattr(args, "out_format", None):
+        cfg.output.format = str(args.out_format)
     # ตรวจล่วงหน้า: ถ้าจะแปลแต่ยังไม่มีคีย์ ให้ข้อความแนะนำเป็นขั้นตอน (ไม่ให้ล้มกลางทาง)
     if not args.no_translate and not cfg.api_key():
         from .providers import missing_key_help
@@ -319,6 +326,13 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("run", help="รัน pipeline เต็มรูปแบบ")
     pr.add_argument("pages", nargs="*", help="เลขหน้าที่ต้องการ (ว่าง=ทุกหน้า)")
     pr.add_argument("--no-translate", action="store_true", help="ข้ามสเตจแปล (ทดสอบ inpaint+typeset)")
+    pr.add_argument("--target-mb", type=float, dest="target_mb",
+                    help="ขนาดไฟล์ผลลัพธ์สูงสุด (MB) — ดีฟอลต์ตาม config (1 MB)")
+    pr.add_argument("--format", dest="out_format",
+                    choices=["webp", "jpeg", "png", "keep"],
+                    help="ฟอร์แมตไฟล์ผลลัพธ์ (ดีฟอลต์ตาม config)")
+    pr.add_argument("--no-compress", action="store_true",
+                    help="ปิดการบีบอัด (บันทึกไฟล์เต็มขนาด)")
     pr.set_defaults(func=cmd_run)
 
     pdl = sub.add_parser("download", help="ดาวน์โหลดรูปจากเว็บ → บังคับ WebP → orig/")

@@ -19,8 +19,24 @@
       </label>
       <label><input type="checkbox" id="showOverlay" checked /> แสดงกรอบแก้ไข</label>
       <button id="btnHelp" class="btn" title="เปิดคู่มือการใช้งาน">❓ ช่วยเหลือ</button>
+      <span class="toolgroup compress-group" title="ขนาดไฟล์สูงสุดของภาพผลลัพธ์">
+        <span class="grouplabel">ขนาดไฟล์</span>
+        <select id="targetMb" class="mini">
+          <option value="0.5">≤ 0.5 MB</option>
+          <option value="1" selected>≤ 1 MB (แนะนำ)</option>
+          <option value="2">≤ 2 MB</option>
+          <option value="5">≤ 5 MB</option>
+          <option value="0">ไม่บีบอัด</option>
+        </select>
+        <select id="outFormat" class="mini" title="ฟอร์แมตไฟล์ผลลัพธ์">
+          <option value="webp" selected>WebP</option>
+          <option value="jpeg">JPEG</option>
+          <option value="png">PNG</option>
+          <option value="keep">คงเดิม</option>
+        </select>
+      </span>
       <button id="btnSave" class="btn" title="บันทึกคำแปล/ค่าที่แก้ (Ctrl+S)">💾 บันทึก</button>
-      <button id="btnRender" class="btn primary" title="บันทึกแล้ววาดภาพใหม่ทันที">⚡ บันทึก &amp; เรนเดอร์ใหม่</button>
+      <button id="btnRender" class="btn primary" title="บันทึกแล้ววาดภาพใหม่ทันที (บีบอัดตามขนาดที่เลือก)">⚡ บันทึก &amp; เรนเดอร์ใหม่</button>
     </div>
   </header>
 
@@ -69,6 +85,8 @@
   <div class="statusbar" id="statusBar">
     <span class="status-ico" id="statusIco">💡</span>
     <span id="statusText">กำลังโหลดโปรเจกต์...</span>
+    <span class="spacer"></span>
+    <span id="outputInfo" class="output-info" title="ขนาดไฟล์ผลลัพธ์ปัจจุบัน"></span>
   </div>
 
   <main class="layout">
@@ -200,6 +218,14 @@
         <li><span class="kbd">Ctrl</span>+<span class="kbd">S</span> บันทึก · <span class="kbd">Ctrl</span>+<span class="kbd">Z</span> ลบเส้นแปรงล่าสุด</li>
         <li><span class="kbd">Esc</span> ยกเลิกการวาด · <span class="kbd">Delete</span> ลบบอลลูนที่เลือก</li>
       </ul>
+
+      <h3>💾 4) บันทึก &amp; บีบอัดไฟล์</h3>
+      <ol>
+        <li>เลือก <b>ขนาดไฟล์สูงสุด</b> ที่มุมขวาบน (ค่าดีฟอลต์ <b>≤ 1 MB</b>) และ <b>ฟอร์แมต</b> (WebP/JPEG/PNG)</li>
+        <li>กด <b>⚡ บันทึก &amp; เรนเดอร์ใหม่</b> → ระบบจะบีบอัดให้อัตโนมัติ</li>
+        <li>ดูขนาดไฟล์จริงได้ที่มุมขวาของแถบสถานะ (🟢 = ไม่เกินเป้า · 🔴 = ยังเกิน)</li>
+      </ol>
+      <div class="tip">💡 ระบบหา "คุณภาพสูงสุด" ที่ยังไม่เกินขนาดเป้าหมายให้เอง (ไม่ลดคุณภาพมั่ว) — ถ้าลดคุณภาพแล้วยังไม่พอ จะย่อขนาดภาพให้เล็กน้อยโดยอัตโนมัติ (ปรับได้ใน <code>config.json → output</code>)</div>
 
       <div class="close-row"><button class="btn primary" id="btnHelpClose">เข้าใจแล้ว ✔</button></div>
     </div>
