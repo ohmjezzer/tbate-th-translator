@@ -18,6 +18,8 @@ const state = {
   drawing: null,            // stroke ที่กำลังวาด
   adding: null,             // {x0,y0,x1,y1} กำลังวาดกรอบใหม่
   brushSize: 24,
+  brushErase: false,        // โหมดแปรง: true = ลบเส้นที่แปรงไว้
+  hover: null,              // พิกัดเมาส์บนภาพ (ไว้โชว์วงกลมขนาดแปรง)
   busy: false,
 };
 
@@ -50,10 +52,34 @@ function toast(msg, isErr = false) {
 }
 
 const curBubble = () => state.page?.bubbles.find((b) => b.uid === state.selected) || null;
-const scale = () => {
+
+/* -------------------------------------------------------------------------
+ * การแปลงพิกัด (สำคัญมาก — ต้นตอ "แปรงลบ/วาดกรอบแล้วได้ผิดตำแหน่ง")
+ * เดิมใช้กรอบของ <canvas> เป็นตัวอ้างอิง ซึ่งอาจไม่ตรงกับรูปที่แสดงจริง
+ * (เช่น รูปถูกย่อ/สลับ view out/cleaned/orig ขนาดต่างกัน)
+ * ตอนนี้ยึด "กรอบของ <img> + ขนาดจริง (natural)" เป็นมาตรฐานเดียว
+ *   - toImageXY(ev)  : พิกัดเมาส์ -> พิกัดพิกเซลของภาพ (ใช้ป้อน stroke/กรอบ)
+ *   - scaleXY()      : อัตราส่วนแสดงผล/ขนาดจริง (แกน x, y แยกกัน)
+ * ----------------------------------------------------------------------- */
+function imgNatural() {
+  const nw = imgEl.naturalWidth || state.page?.width || 1;
+  const nh = imgEl.naturalHeight || state.page?.height || 1;
+  return { nw, nh };
+}
+function scaleXY() {
   const r = imgEl.getBoundingClientRect();
-  return state.page ? r.width / state.page.width : 1;
-};
+  const { nw, nh } = imgNatural();
+  return { sx: r.width ? r.width / nw : 1, sy: r.height ? r.height / nh : 1 };
+}
+const scale = () => scaleXY().sx;
+function toImageXY(ev) {
+  const r = imgEl.getBoundingClientRect();
+  const { sx, sy } = scaleXY();
+  const { nw, nh } = imgNatural();
+  const x = Math.max(0, Math.min(nw, (ev.clientX - r.left) / sx));
+  const y = Math.max(0, Math.min(nh, (ev.clientY - r.top) / sy));
+  return { x, y };
+}
 const rgbToHex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 const hexToRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
@@ -102,6 +128,7 @@ async function selectPage(index) {
   renderBubbleList();
   syncPanel();
   loadMetrics(index);
+  updateStatus();
   $('hint').textContent =
     `หน้า ${index} · ${state.page.width}×${state.page.height} · ${state.page.bubbles.length} บอลลูน`;
 }
@@ -228,78 +255,132 @@ function resizeCanvas() {
 
 function drawBrush() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const s = scale();
-  ctx.fillStyle = 'rgba(255,60,90,0.45)';
-  ctx.strokeStyle = 'rgba(255,60,90,0.45)';
+  const { sx, sy } = scaleXY();
   const all = state.drawing ? state.strokes.concat([state.drawing]) : state.strokes;
   for (const st of all) {
     const pts = st.points || [];
+    const rx = Math.max(1, st.radius * sx), ry = Math.max(1, st.radius * sy);
+    const color = 'rgba(255,60,90,0.45)';
+    // จุด
+    ctx.fillStyle = color;
     for (const p of pts) {
-      ctx.beginPath();
-      ctx.arc(p[0] * s, p[1] * s, Math.max(1, st.radius * s), 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(p[0] * sx, p[1] * sy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // เส้นเชื่อมให้ดูต่อเนื่อง (ตรงกับที่ backend วาดจริง)
+    if (pts.length >= 2) {
+      ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, st.radius * 2 * sx);
+      ctx.lineCap = ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(pts[0][0] * sx, pts[0][1] * sy);
+      for (const p of pts.slice(1)) ctx.lineTo(p[0] * sx, p[1] * sy);
+      ctx.stroke();
     }
   }
+  moveBrushCursor(state.hover);
+}
+
+/* วงกลมแสดงขนาดแปรง (ให้เห็นก่อนวาดว่ากว้างแค่ไหน) */
+function moveBrushCursor(imgPt) {
+  const cur = $('brushCursor');
+  if (!cur) return;
+  if (!imgPt || (state.tool !== 'brush' && state.tool !== 'add')) {
+    cur.style.display = 'none'; return;
+  }
+  const s = scale();
+  const rr = Math.max(3, state.brushSize * s);
+  cur.style.display = 'block';
+  cur.style.width = cur.style.height = `${rr * 2}px`;
+  cur.style.left = `${imgPt[0] * s - rr}px`;
+  cur.style.top = `${imgPt[1] * s - rr}px`;
 }
 
 canvas.addEventListener('mousedown', (e) => {
   if (state.tool !== 'brush') return;
-  const r = canvas.getBoundingClientRect();
-  const s = scale();
-  const x = (e.clientX - r.left) / s, y = (e.clientY - r.top) / s;
+  const { x, y } = toImageXY(e);
+  if (state.brushErase) { eraseStrokeAt(x, y); return; }
   state.drawing = { points: [[x, y]], radius: state.brushSize };
-  drawBrush();
-  e.preventDefault();
+  drawBrush(); e.preventDefault();
 });
 canvas.addEventListener('mousemove', (e) => {
+  const { x, y } = toImageXY(e);
+  state.hover = [x, y];
+  if (state.tool === 'brush' || state.tool === 'add') moveBrushCursor(state.hover);
   if (!state.drawing) return;
-  const r = canvas.getBoundingClientRect();
-  const s = scale();
-  state.drawing.points.push([(e.clientX - r.left) / s, (e.clientY - r.top) / s]);
+  state.drawing.points.push([x, y]);
   drawBrush();
 });
+canvas.addEventListener('mouseleave', () => { state.hover = null; moveBrushCursor(null); });
 window.addEventListener('mouseup', () => {
   if (state.drawing) {
     state.strokes.push(state.drawing);
     state.drawing = null;
     drawBrush();
+    updateStatus();
   }
 });
 
-function clearBrush() { state.strokes = []; state.drawing = null; drawBrush(); }
+/* ลบเส้นที่แปรงไว้ (คลิกทับ) — ใช้เมื่อวาดผิดจุด */
+function eraseStrokeAt(x, y) {
+  const idx = state.strokes.findIndex((st) =>
+    (st.points || []).some((pt) => Math.hypot(pt[0] - x, pt[1] - y) <= (st.radius + state.brushSize)));
+  if (idx >= 0) {
+    state.strokes.splice(idx, 1);
+    drawBrush(); updateStatus();
+    toast('ลบเส้นที่แปรงแล้ว');
+  } else {
+    toast('ไม่พบเส้นที่ตำแหน่งนี้ — คลิกให้ตรงเส้นสีแดง', true);
+  }
+}
+
+function undoStroke() {
+  if (!state.strokes.length) { toast('ไม่มีเส้นให้ลบ', true); return; }
+  state.strokes.pop(); drawBrush(); updateStatus();
+  toast('ลบเส้นล่าสุดแล้ว');
+}
+
+function toggleBrushErase() {
+  state.brushErase = !state.brushErase;
+  $('brushModeErase').classList.toggle('toggle-on', state.brushErase);
+  $('brushModeErase').textContent = state.brushErase ? '🧽 กำลังลบเส้น (คลิกทับ)' : '🧽 ลบเส้นที่แปรง';
+  canvas.style.cursor = state.brushErase ? 'not-allowed' : 'crosshair';
+  updateStatus();
+}
+
+function clearBrush() { state.strokes = []; state.drawing = null; drawBrush(); updateStatus(); }
 
 /* ---- โหมด 3: เพิ่มบอลลูน ---- */
 let addRect = null;
 canvas.addEventListener('mousedown', (e) => {
   if (state.tool !== 'add') return;
-  const r = canvas.getBoundingClientRect();
-  const s = scale();
-  addRect = { x0: (e.clientX - r.left) / s, y0: (e.clientY - r.top) / s,
-              x1: (e.clientX - r.left) / s, y1: (e.clientY - r.top) / s };
+  const { x, y } = toImageXY(e);
+  addRect = { x0: x, y0: y, x1: x, y1: y };
   e.preventDefault();
 });
 canvas.addEventListener('mousemove', (e) => {
   if (!addRect) return;
-  const r = canvas.getBoundingClientRect(); const s = scale();
-  addRect.x1 = (e.clientX - r.left) / s; addRect.y1 = (e.clientY - r.top) / s;
+  const { x, y } = toImageXY(e);
+  addRect.x1 = x; addRect.y1 = y;
   drawAddRect();
 });
 window.addEventListener('mouseup', async () => {
   if (!addRect) return;
   const a = addRect; addRect = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const x0 = Math.min(a.x0, a.x1), y0 = Math.min(a.y0, a.y1);
-  const x1 = Math.max(a.x0, a.x1), y1 = Math.max(a.y0, a.y1);
-  if (x1 - x0 < 8 || y1 - y0 < 8) { toast('กรอบเล็กเกินไป', true); return; }
-  await addBubble([Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)]);
+  const x0 = Math.round(Math.min(a.x0, a.x1)), y0 = Math.round(Math.min(a.y0, a.y1));
+  const x1 = Math.round(Math.max(a.x0, a.x1)), y1 = Math.round(Math.max(a.y0, a.y1));
+  if (x1 - x0 < 12 || y1 - y0 < 12) {
+    toast('กรอบเล็กเกินไป — ลากให้ใหญ่กว่า 12×12 px', true);
+    updateStatus();
+    return;
+  }
+  await addBubble([x0, y0, x1, y1], $('newErase') ? $('newErase').checked : false);
 });
 
 function drawAddRect() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!addRect) return;
-  const s = scale();
-  const x = Math.min(addRect.x0, addRect.x1) * s, y = Math.min(addRect.y0, addRect.y1) * s;
-  const w = Math.abs(addRect.x1 - addRect.x0) * s, h = Math.abs(addRect.y1 - addRect.y0) * s;
+  const { sx, sy } = scaleXY();
+  const x = Math.min(addRect.x0, addRect.x1) * sx, y = Math.min(addRect.y0, addRect.y1) * sy;
+  const w = Math.abs(addRect.x1 - addRect.x0) * sx, h = Math.abs(addRect.y1 - addRect.y0) * sy;
   ctx.fillStyle = 'rgba(46,204,113,0.18)'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
 }
@@ -321,6 +402,7 @@ function renderBubbleList() {
 function selectBubble(uid) {
   state.selected = uid;
   renderOverlay(); renderBubbleList(); syncPanel();
+  updateStatus();
 }
 
 function syncPanel() {
@@ -409,19 +491,66 @@ function setTool(tool) {
   const inner = $('stageInner');
   inner.classList.toggle('brushing', tool === 'brush');
   inner.classList.toggle('adding', tool === 'add');
-  canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
   overlayEl.style.pointerEvents = tool === 'select' ? 'auto' : 'none';
-  if (tool !== 'brush') { /* เก็บ strokes ไว้ แต่ซ่อนสี */ }
+
+  // ออกจากโหมดแปรง -> ปิดโหมดลบเส้นด้วย (กันสับสน)
+  if (tool !== 'brush' && state.brushErase) {
+    state.brushErase = false;
+    $('brushModeErase').classList.remove('toggle-on');
+    $('brushModeErase').textContent = '🧽 ลบเส้นที่แปรง';
+  }
+  canvas.style.cursor = (tool === 'brush' && state.brushErase) ? 'not-allowed' : 'crosshair';
+  if (tool === 'select') canvas.style.cursor = 'default';
+
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (tool === 'brush') drawBrush();
+  moveBrushCursor(null);
+  updateStatus();
 }
+
+/* แถบสถานะ: บอกทีละขั้นว่ากำลังทำอะไร/ต้องทำอะไรต่อ */
+function updateStatus() {
+  const ico = $('statusIco'), txt = $('statusText');
+  if (!ico || !txt) return;
+  const b = curBubble();
+  let icon = '💡', msg = '';
+  if (state.tool === 'brush') {
+    icon = '🖌';
+    msg = state.brushErase
+      ? 'โหมดลบเส้น: คลิกทับ "เส้นสีแดง" ที่แปรงไว้เพื่อลบทิ้ง'
+      : `วาดทับข้อความ/พื้นหลังที่อยากลบ (จะเห็นสีแดง) แล้วกด “🪄 ลบพื้นที่ที่แปรง (AI)” · ขนาดแปรง ${state.brushSize}px · แปรงไว้ ${state.strokes.length} เส้น`;
+  } else if (state.tool === 'add') {
+    icon = '➕';
+    msg = 'ลากวาดกรอบครอบข้อความที่ระบบจับไม่เจอ → ระบบจะสร้างบอลลูนใหม่ให้ (ติ๊ก “ลบข้อความเดิมในกรอบ” ได้)';
+  } else {
+    icon = '✋';
+    msg = b
+      ? `เลือกบอลลูน ${b.uid} (${b.kind}) — ลากย้าย · ลากมุมขวาล่างปรับขนาด · พิมพ์คำแปลด้านขวา`
+      : 'คลิกบอลลูนในภาพเพื่อแก้คำแปล/ย้าย/ปรับขนาด · หรือเลือกเครื่องมือด้านบนเพื่อแปรงลบ/เพิ่มบอลลูน';
+  }
+  ico.textContent = icon;
+  txt.textContent = msg;
+}
+
 $('toolSelect').onclick = () => setTool('select');
 $('toolBrush').onclick = () => setTool('brush');
 $('toolAdd').onclick = () => setTool('add');
 $('brushSize').addEventListener('input', (e) => {
-  state.brushSize = Number(e.target.value); $('brushSizeVal').textContent = e.target.value;
+  state.brushSize = Number(e.target.value);
+  $('brushSizeVal').textContent = e.target.value;
+  moveBrushCursor(state.hover);
+  updateStatus();
 });
-$('btnClearBrush').onclick = () => { clearBrush(); toast('ล้างที่แปรงแล้ว'); };
+$('brushModeErase').onclick = () => toggleBrushErase();
+$('btnUndoStroke').onclick = () => undoStroke();
+$('btnClearBrush').onclick = () => { clearBrush(); toast('ล้างที่แปรงทั้งหมดแล้ว'); };
+
+/* ------------------------- help modal --------------------------- */
+$('btnHelp').onclick = () => $('helpModal').classList.remove('hidden');
+$('btnHelpClose').onclick = () => $('helpModal').classList.add('hidden');
+$('helpModal').addEventListener('click', (e) => {
+  if (e.target.id === 'helpModal') e.target.classList.add('hidden');
+});
 
 /* ------------------------- save / render / inpaint -------------- */
 function collectEdits() {
@@ -452,17 +581,22 @@ async function renderPage() {
   } catch (e) { toast('เรนเดอร์ไม่สำเร็จ: ' + e.message, true); }
 }
 
-async function addBubble(bbox) {
+async function addBubble(bbox, erase = false) {
+  if (!state.page) { toast('ยังไม่ได้เลือกหน้า', true); return; }
   try {
+    toast(erase ? 'กำลังเพิ่มบอลลูน + ลบข้อความเดิม (AI)...' : 'กำลังเพิ่มบอลลูน...');
     const r = await api(`/api/page/${state.page.index}/bubbles`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op: 'add', bbox, kind: $('newKind').value }),
+      body: JSON.stringify({ op: 'add', bbox, kind: $('newKind').value, erase: !!erase }),
     });
     await selectPage(state.page.index);
     selectBubble(r.uid);
     setTool('select');
-    toast('เพิ่มบอลลูนแล้ว ✓ (พิมพ์คำแปลได้เลย)');
-  } catch (e) { toast('เพิ่มบอลลูนไม่สำเร็จ: ' + e.message, true); }
+    const ta = $('textInput'); if (ta) ta.focus();
+    const bad = erase && r.erased === false;
+    toast(bad ? 'เพิ่มบอลลูนแล้ว (แต่ลบข้อความเดิมไม่สำเร็จ — ลองใช้แปรงลบ)'
+              : 'เพิ่มบอลลูนแล้ว ✓ พิมพ์คำแปลได้เลย', bad);
+  } catch (e) { toast('เพิ่มบอลลูนไม่สำเร็จ: ' + (e.body?.error || e.message), true); }
 }
 
 async function deleteBubble(uid) {
@@ -483,13 +617,14 @@ async function applyInpaint() {
   $('btnApplyInpaint').disabled = true;
   $('btnApplyInpaint').textContent = '⏳ กำลังลบ (AI)...';
   try {
-    await api(`/api/page/${state.page.index}/inpaint`, {
+    const r = await api(`/api/page/${state.page.index}/inpaint`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ op: 'inpaint', strokes: state.strokes, grow: 4 }),
     });
     clearBrush();
     refreshImage(true);
-    toast('ลบพื้นที่เรียบร้อย ✓');
+    if (state.pageIndex != null) loadMetrics(state.pageIndex);
+    toast(`ลบพื้นที่เรียบร้อย ✓${r && r.method ? ' (' + r.method + ')' : ''}`);
   } catch (e) {
     toast('ลบไม่สำเร็จ: ' + (e.body?.error || e.message), true);
   } finally {
@@ -506,6 +641,7 @@ async function undoInpaint() {
       body: JSON.stringify({ op: 'undo' }),
     });
     refreshImage(true);
+    if (state.pageIndex != null) loadMetrics(state.pageIndex);
     toast('ย้อนการลบแล้ว ✓');
   } catch (e) { toast('undo ไม่สำเร็จ: ' + (e.body?.error || e.message), true); }
 }
@@ -536,8 +672,31 @@ async function preparePage(index) {
   }
 }
 
+/* ------------------------- คีย์ลัด ------------------------------ */
+document.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  const typing = ['TEXTAREA', 'INPUT', 'SELECT'].includes(tag);
+
+  if (e.key === 'Escape') {
+    if (addRect) { addRect = null; ctx.clearRect(0, 0, canvas.width, canvas.height); updateStatus(); }
+    const hm = $('helpModal'); if (hm && !hm.classList.contains('hidden')) hm.classList.add('hidden');
+    return;
+  }
+  if (typing) return;
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key.toLowerCase() === 's') { e.preventDefault(); savePage(false); }
+    else if (e.key.toLowerCase() === 'z' && state.tool === 'brush') { e.preventDefault(); undoStroke(); }
+    return;
+  }
+  if (e.key === '1') setTool('select');
+  else if (e.key === '2') setTool('brush');
+  else if (e.key === '3') setTool('add');
+  else if (e.key.toLowerCase() === 'e' && state.tool === 'brush') toggleBrushErase();
+});
+
 /* ------------------------- boot -------------------------------- */
 setTool('select');
+updateStatus();
 loadProject().catch((e) => toast('โหลดโปรเจกต์ไม่สำเร็จ: ' + e.message, true));
 
 /* ======================= Monitoring Dashboard =======================

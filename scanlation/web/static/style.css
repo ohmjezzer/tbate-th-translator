@@ -154,17 +154,23 @@ label.inline input[type=range] { width: 110px; }
 .btn.small-btn { padding: 5px 10px; font-size: 12px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
-/* layout ปรับความสูงเมื่อมี toolbar */
-.layout { height: calc(100vh - 53px - 48px); }
+/* layout ปรับความสูงเมื่อมี toolbar + statusbar */
+.layout { height: calc(100vh - 53px - 48px - 36px); }
 
-/* ---------- brush canvas ---------- */
+/* ---------- brush / draw canvas ---------- */
 .brush-canvas {
   position: absolute; inset: 0; z-index: 5;
-  cursor: crosshair; pointer-events: none;   /* เปิดเมื่ออยู่ในโหมดแปรง */
+  cursor: crosshair; pointer-events: none;   /* เปิดเมื่ออยู่ในโหมดแปรง/วาดกรอบ */
   touch-action: none;
 }
-.stage-inner.brushing .brush-canvas { pointer-events: auto; }
-.stage-inner.adding #overlay { pointer-events: none; }
+/* ★ สำคัญ: ต้องเปิด pointer-events ทั้ง "แปรง" และ "เพิ่มบอลลูน"
+   (เดิมเปิดเฉพาะ brushing → ทำให้ลากวาดกรอบเพิ่มบอลลูนไม่ได้) */
+.stage-inner.brushing .brush-canvas,
+.stage-inner.adding  .brush-canvas { pointer-events: auto; }
+.stage-inner.brushing .overlay,
+.stage-inner.adding  .overlay { pointer-events: none; }
+.stage-inner.brushing #pageImage,
+.stage-inner.adding  #pageImage { cursor: crosshair; }
 
 /* กรอบบอลลูนที่กำลังเลือก/ลาก */
 .bub .del-badge {
@@ -209,3 +215,72 @@ label.inline input[type=range] { width: 110px; }
 }
 .dash-img-row span { display: block; text-align: center; font-size: 10.5px; color: var(--muted); margin-top: 3px; }
 .dash-img-row a:hover img { border-color: var(--accent); }
+
+/* =========================================================================
+   UI ปรับปรุงให้ใช้งานง่ายขึ้น (PR: preview UX overhaul)
+   ========================================================================= */
+
+/* ปุ่ม/แถบเครื่องมือ: จัดกลุ่มให้อ่านง่าย */
+.grouplabel {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-right: 2px;
+}
+.toolbar { row-gap: 8px; }
+.toolbar .toolgroup { flex-wrap: wrap; }
+label.inline.chk-inline { color: var(--txt); }
+
+/* แถบสถานะ: บอกทีละขั้นว่ากำลังทำอะไร ต้องทำอะไรต่อ */
+.statusbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 16px; background: #141822; border-bottom: 1px solid var(--line);
+  color: var(--txt); font-size: 12.5px; position: sticky; top: 101px; z-index: 14;
+}
+.statusbar .status-ico { font-size: 14px; }
+.statusbar b { color: #ffd479; }
+.statusbar .kbd {
+  display: inline-block; padding: 0 5px; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; font-size: 10.5px;
+  background: var(--panel-2); color: var(--txt); margin: 0 1px;
+}
+
+/* ปุ่มโหมดลบเส้น (แปรง) ที่กำลัง aktif */
+.btn.toggle-on { background: #5a2b34; border-color: var(--danger); color: #ffd0d8; }
+
+/* ตัวชี้แสดงขนาดแปรง */
+.brush-cursor {
+  position: absolute; border: 2px solid rgba(255,60,90,.9);
+  border-radius: 50%; pointer-events: none; z-index: 6; display: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.5) inset;
+}
+
+/* ม็อดัลช่วยเหลือ */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-backdrop.hidden { display: none; }
+.modal {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  max-width: 620px; width: 100%; max-height: 82vh; overflow: auto; padding: 20px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+}
+.modal h2 { margin: 0 0 4px; font-size: 18px; }
+.modal h3 { margin: 16px 0 6px; font-size: 14px; color: #ffd479; }
+.modal ol, .modal ul { margin: 6px 0; padding-left: 20px; }
+.modal li { margin: 4px 0; line-height: 1.6; }
+.modal .close-row { display: flex; justify-content: flex-end; margin-top: 16px; }
+.modal .kbd {
+  display: inline-block; padding: 0 5px; border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; font-size: 11px;
+  background: var(--panel-2); margin: 0 1px;
+}
+.modal .tip { background: var(--panel-2); border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: 12.5px; }
+
+/* แถวคำแนะนำเล็ก ๆ ใต้เครื่องมือ */
+.hintline { font-size: 11.5px; color: var(--muted); }
+
+/* ป้ายกำกับ "บอลลูนที่เลือก" ให้เด่นขึ้น */
+.edit-panel .sel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--panel-2); border-radius: 8px; padding: 6px 10px;
+}
